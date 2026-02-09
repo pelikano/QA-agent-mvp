@@ -1,0 +1,3 @@
+language: es
+risk_thresholds:
+  high: 2

@@ -1,0 +1,1 @@
+Una historia bien definida debe incluir comportamiento esperado y casos de error.
