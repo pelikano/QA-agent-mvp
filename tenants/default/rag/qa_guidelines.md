@@ -1,0 +1,3 @@
+- Los criterios de aceptación deben escribirse en Gherkin.
+- No se asume comportamiento no definido explícitamente.
+- Los mensajes de error deben estar especificados.

@@ -2,3 +2,6 @@ openai
 pydantic
 fastapi
 uvicorn
+faiss-cpu
+numpy
+

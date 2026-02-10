@@ -2,14 +2,14 @@
 
 Agente interno para ayudar a POs y QAs a mejorar la calidad de las historias de usuario **antes del desarrollo**.
 
-El agente analiza historias, detecta faltas de definición e incongruencias funcionales, y propone criterios de aceptación en formato Gherkin.  
-No toma decisiones de negocio ni sustituye al equipo: actúa como **asistente de calidad**.
+El agente actúa como un QA senior virtual: analiza historias, detecta faltas de definición e incongruencias funcionales, y propone criterios de aceptación claros y testables.  
+No toma decisiones de negocio ni sustituye al equipo.
 
 ---
 
 ## Qué hace
 
-Dada una historia de usuario, el agente devuelve un JSON con:
+Dada una historia de usuario, el agente devuelve un JSON estructurado con:
 
 - Resumen de calidad de la historia
 - Nivel de riesgo (LOW / MEDIUM / HIGH)
@@ -18,7 +18,25 @@ Dada una historia de usuario, el agente devuelve un JSON con:
 - Casos borde relevantes
 - Notas sobre automatización de tests
 
-El objetivo es reducir aclaraciones posteriores y bugs funcionales.
+El análisis se apoya en:
+- Un prompt de QA senior
+- Validación estricta por schema
+- Reintento automático con autocorrección
+- Conocimiento del proyecto (RAG)
+
+---
+
+## Conocimiento del proyecto (RAG)
+
+El agente puede usar documentación propia del proyecto (RAG – Retrieval Augmented Generation), por ejemplo:
+
+- Definition of Done
+- Guías de QA
+- Decisiones funcionales estables
+- Limitaciones técnicas conocidas
+- Bugs recurrentes
+
+Estos documentos viven en archivos Markdown y se consultan dinámicamente para mejorar la precisión del análisis, sin entrenar el modelo ni almacenar conversaciones.
 
 ---
 
@@ -54,7 +72,7 @@ Exportar la API key de OpenAI como variable de entorno:
 
 export OPENAI_API_KEY="tu_api_key_aqui"
 
-(No se guarda en el código.)
+La API key no se guarda en el código ni en el repositorio.
 
 ---
 
@@ -64,7 +82,8 @@ uvicorn api:app --reload
 
 Servicio disponible en:
 
-http://127.0.0.1:8000  
+http://127.0.0.1:8000
+
 Swagger UI:
 
 http://127.0.0.1:8000/docs
@@ -73,11 +92,11 @@ http://127.0.0.1:8000/docs
 
 ## Uso
 
-Navega a la url del Swagger y en el Endpoint:
+### Endpoint
 
 POST /analyze
 
-Ejemplo de petición:
+### Ejemplo de petición
 
 {
   "issue_id": "PROJ-203",
@@ -86,15 +105,53 @@ Ejemplo de petición:
   "acceptance_criteria": "El usuario debe poder completar un formulario de registro y ser mayor de 18 años."
 }
 
-Respuesta:
+### Respuesta
 
-JSON estructurado con análisis de calidad, riesgos y criterios de aceptación.
+JSON estructurado con:
+- Análisis de calidad
+- Riesgos
+- Criterios de aceptación
+- Casos borde
+- Consideraciones de automatización
+
+---
+
+## Estructura del proyecto
+
+qa-agent-mvp/
+├── api.py
+├── core/
+│   ├── agent.py
+│   ├── llm.py
+│   ├── prompt_builder.py
+│   ├── retry.py
+│   ├── validator.py
+│   ├── schemas.py
+│   └── rag.py
+├── tenants/
+│   └── default/
+│       ├── system_prompt.txt
+│       └── rag/
+│           └── *.md
+├── schemas/
+└── requirements.txt
+
+---
+
+## Qué NO hace el agente
+
+- No aprueba historias
+- No redefine requisitos de negocio
+- No prioriza
+- No inventa comportamiento no especificado
 
 ---
 
 ## Estado del proyecto
 
-- MVP funcional
+- MVP funcional y estable
 - Uso local
-- Fácil de integrar con Jira en siguientes fases
-- Preparado para extender a multi-equipo o multi-cliente
+- Preparado para integración con Jira
+- Preparado para multi-equipo / multi-cliente
+- Base sólida para evolución a CI/CD
+
