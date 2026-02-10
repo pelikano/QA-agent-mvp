@@ -73,7 +73,7 @@ http://127.0.0.1:8000/docs
 
 ## Uso
 
-Endpoint:
+Navega a la url del Swagger y en el Endpoint:
 
 POST /analyze
 
