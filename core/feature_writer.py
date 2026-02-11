@@ -1,7 +1,7 @@
-
 import os
 
 OUTPUT_DIR = "generated_tests"
+
 
 def save_features_to_disk(test_suite: dict):
 
@@ -20,9 +20,11 @@ def save_features_to_disk(test_suite: dict):
 
         with open(filepath, "w", encoding="utf-8") as f:
 
-            f.write(f"Feature: {feature['feature_name']}\n\n")
+            f.write(f"Feature: {feature['feature_name']}\n")
+            f.write(f"  {feature['description']}\n\n")
 
             for scenario in feature["scenarios"]:
+
                 f.write(f"  Scenario: {scenario['name']}\n")
 
                 for step in scenario["steps"]:

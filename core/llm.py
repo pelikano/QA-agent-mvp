@@ -1,25 +1,24 @@
-from openai import OpenAI
 import json
-import os
+from openai import OpenAI
 
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+client = OpenAI()
 
-def call_llm(prompt: dict) -> dict:
-    print(">>> CALLING OPENAI <<<")
+
+def call_llm(prompt: dict):
+
+    system_message = prompt.get("system", "")
+    user_payload = prompt.get("data") or prompt.get("story") or prompt
 
     response = client.chat.completions.create(
         model="gpt-4o-mini",
+        response_format={"type": "json_object"},
         messages=[
-            {"role": "system", "content": prompt["system"]},
+            {"role": "system", "content": system_message},
             {
                 "role": "user",
-                "content": (
-                    "Analiza la siguiente historia de usuario y responde en JSON.\n\n"
-                    + json.dumps(prompt["story"], ensure_ascii=False)
-                )
+                "content": json.dumps(user_payload, ensure_ascii=False)
             }
-        ],
-        response_format={"type": "json_object"}
+        ]
     )
 
     return json.loads(response.choices[0].message.content)

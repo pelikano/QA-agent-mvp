@@ -1,13 +1,17 @@
 from fastapi import FastAPI, UploadFile, File
 import tempfile
+import os
+
 
 from core.agent import run_agent
-from core.pdf_reader import extract_text_from_pdf
 from core.test_prompt_builder import build_test_prompt
 from core.feature_writer import save_features_to_disk
-from core.schemas_tests import TestSuite
 from core.retry import retry_with_correction
 from core.llm import call_llm
+from core.evolve_prompt_builder import build_evolve_prompt
+from core.test_reader import read_existing_tests
+from core.schemas_tests import UpdatedTestSuite
+from core.document_reader import extract_document
 
 
 app = FastAPI()
@@ -16,33 +20,70 @@ app = FastAPI()
 def analyze_story(story: dict):
     return run_agent(story)
 
-@app.post("/generate-tests-pdf")
-async def generate_tests_from_pdf(file: UploadFile = File(...)):
+@app.post("/sync-tests")
+async def sync_tests(
+    file: UploadFile = File(None),
+    text_input: str = None,
+    dry_run: bool = True
+):
 
-    # Guardar temporalmente el PDF
-    with tempfile.NamedTemporaryFile(delete=False) as tmp:
-        content = await file.read()
-        tmp.write(content)
-        tmp_path = tmp.name
+    if not file and not text_input:
+        return {"error": "Provide file or text_input."}
 
-    # Extraer texto del PDF
-    extracted_text = extract_text_from_pdf(tmp_path)
+    # Extract document
+    if file:
+        original_filename = file.filename
+        ext = os.path.splitext(original_filename)[1].lower()
 
-    # Construir prompt
-    prompt = build_test_prompt(extracted_text)
+        with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
+            content = await file.read()
+            tmp.write(content)
+            tmp_path = tmp.name
 
-    # Llamar al LLM con retry + validación
-    test_suite = retry_with_correction(
-        call_fn=call_llm,
-        prompt=prompt,
-        schema_cls=TestSuite
-    )
+        new_document = extract_document(tmp_path)
 
-    # Guardar archivos .feature
-    save_features_to_disk(test_suite)
 
-    return {
-        "status": "Test suite generated successfully",
-        "features_created": len(test_suite["features"])
-    }
+    else:
+        new_document = text_input
+
+    # Load current tests
+    current_tests = read_existing_tests()
+
+    # CASE 1 — Initial generation
+    if not current_tests:
+
+        prompt = build_test_prompt(new_document)
+
+        test_suite = retry_with_correction(
+            call_fn=call_llm,
+            prompt=prompt,
+            schema_cls=UpdatedTestSuite
+        )
+
+        if not dry_run:
+            save_features_to_disk(test_suite)
+
+        return {
+            "mode": "initial_generation",
+            "result": test_suite
+        }
+
+    # CASE 2 — Evolution
+    else:
+
+        prompt = build_evolve_prompt(current_tests, new_document)
+
+        updated_suite = retry_with_correction(
+            call_fn=call_llm,
+            prompt=prompt,
+            schema_cls=UpdatedTestSuite
+        )
+
+        if not dry_run:
+            save_features_to_disk(updated_suite)
+
+        return {
+            "mode": "evolution",
+            "result": updated_suite
+        }
 

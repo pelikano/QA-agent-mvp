@@ -1,13 +1,13 @@
 # QA Agent MVP
 
-AI-powered QA assistant designed to improve user story quality and automatically generate Gherkin test suites from functional documentation.
+AI-powered QA assistant designed to improve user story quality and automatically synchronize Gherkin test suites with evolving functional documentation.
 
 This service provides two main capabilities:
 
 1. User Story Quality Analysis
-2. Automatic Test Generation from PDF Specifications
+2. Autonomous Test Synchronization from Functional Documents (PDF, DOCX, TXT or raw text)
 
-It is built with FastAPI and OpenAI models, includes schema validation, retry logic, and is ready to integrate into CI pipelines.
+It is built with FastAPI and OpenAI models, includes strict schema validation, retry logic, JSON enforcement, and is ready to integrate into CI pipelines.
 
 ---
 
@@ -31,17 +31,38 @@ The output is strictly validated against a schema to ensure consistency.
 
 ---
 
-2. Test Generation from PDF
+2. Autonomous Test Synchronization
 
 Endpoint:
-POST /generate-tests-pdf
+POST /sync-tests
 
-Accepts a functional specification in PDF format and automatically:
+Accepts:
 
-* Detects distinct functional areas
-* Generates one Gherkin Feature per area
-* Generates multiple realistic Scenarios per feature
-* Saves .feature files to:
+* PDF
+* DOCX
+* TXT
+* Raw text input
+
+The agent automatically decides whether to:
+
+A) Generate an initial test suite (if no tests exist)
+B) Evolve an existing suite (if tests already exist)
+
+This makes the system a synchronization engine rather than a simple generator.
+
+The process:
+
+* Detects SCREEN sections
+* Generates one Gherkin Feature per screen
+* Generates structured Given / When / Then scenarios
+* Modifies only impacted scenarios
+* Marks obsolete scenarios as @deprecated
+* Preserves unchanged tests
+* Adds new features when required
+
+All output is strictly validated against a JSON schema before being written to disk.
+
+Generated files are saved in:
 
 generated_tests/
 
@@ -51,6 +72,35 @@ The generated files are compatible with:
 * Behave
 * SpecFlow
 * CI pipelines
+
+---
+
+# DRY RUN MODE (VERY IMPORTANT)
+
+The endpoint supports:
+
+dry_run = true | false
+
+If dry_run = true:
+
+* The system generates the full updated test suite
+* Returns the structured JSON response
+* DOES NOT modify any .feature files
+* Ideal for previewing changes safely
+
+If dry_run = false:
+
+* The test suite is written to disk
+* Existing features are overwritten if modified
+* New features are created
+* Deprecated scenarios are marked accordingly
+
+Recommended workflow:
+
+1) First call with dry_run=true to inspect changes
+2) If satisfied, call again with dry_run=false to apply changes
+
+This prevents accidental overwrites and allows safe CI integration.
 
 ---
 
@@ -86,6 +136,7 @@ pydantic
 faiss-cpu
 numpy
 pypdf
+python-docx
 
 4. Configure OpenAI API key
 
@@ -103,11 +154,11 @@ uvicorn api:app --reload
 
 The service will run at:
 
-[http://127.0.0.1:8000](http://127.0.0.1:8000)
+http://127.0.0.1:8000
 
 Swagger UI (interactive API documentation):
 
-[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+http://127.0.0.1:8000/docs
 
 ---
 
@@ -122,35 +173,42 @@ POST /analyze
 Provide a JSON body like:
 
 {
-"issue_id": "PROJ-101",
-"title": "User Registration",
-"description": "As a user, I want to register with email and password.",
-"acceptance_criteria": "User must be over 18 years old."
+  "issue_id": "PROJ-101",
+  "title": "User Registration",
+  "description": "As a user, I want to register with email and password.",
+  "acceptance_criteria": "User must be over 18 years old."
 }
 
 Execute the request to receive structured QA feedback.
 
 ---
 
-B) Generate Tests from a PDF
+B) Synchronize Tests with Functional Documentation
 
 Go to /docs, select:
 
-POST /generate-tests-pdf
+POST /sync-tests
 
-1. Click "Try it out"
-2. Upload a functional specification PDF
-3. Execute
+You can:
+
+1. Upload a PDF / DOCX / TXT file
+OR
+2. Paste text directly
+
+Then choose dry_run:
+
+* dry_run=true → preview changes only
+* dry_run=false → apply changes to .feature files
 
 The API will:
 
-* Process the document
-* Generate structured test definitions
-* Create .feature files in:
+* Detect functional screens
+* Generate or evolve Gherkin features
+* Enforce strict Given / When / Then structure
+* Validate output schema
+* Save .feature files in:
 
 generated_tests/
-
-You can immediately integrate these files into your automation framework.
 
 ---
 
@@ -171,9 +229,11 @@ Generated tests are considered build artifacts unless intentionally versioned.
 # ARCHITECTURE NOTES
 
 * Strict JSON schema validation for LLM output
-* Retry mechanism for malformed responses
-* Modular ingestion layer (JSON, PDF)
-* Designed for future multi-tenant SaaS architecture
+* Automatic retry mechanism for malformed responses
+* Single synchronization endpoint (no duplicated logic)
+* Modular ingestion layer (PDF, DOCX, TXT, raw text)
+* Tests are treated as the source of truth
+* Evolution engine detects changes instead of regenerating blindly
 * Ready for Jira / CI integration
 
 ---
@@ -181,10 +241,12 @@ Generated tests are considered build artifacts unless intentionally versioned.
 # CURRENT STATUS
 
 * Stable MVP
-* Production-structured
+* Unified synchronization architecture
+* Strict contract-based LLM interaction
+* Gherkin-compliant output
 * CI-ready test output
 * Extensible ingestion pipeline
 
 ---
 
-This project provides a foundation for a scalable AI-assisted QA workflow.
+This project provides a foundation for a scalable AI-assisted QA workflow and intelligent automated test maintenance.
