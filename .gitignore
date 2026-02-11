@@ -30,6 +30,18 @@ ENV/
 **/*token*
 
 # =========================
+# Generated test artifacts
+# =========================
+generated_tests/
+*.feature
+
+# =========================
+# RAG index artifacts
+# =========================
+tenants/*/rag/index.faiss
+tenants/*/rag/metadata.json
+
+# =========================
 # OS files
 # =========================
 .DS_Store
@@ -37,4 +49,7 @@ Thumbs.db
 
 # =========================
 # IDE / Editor
-# =================
+# =========================
+.vscode/
+.idea/
+*.swp

@@ -1,157 +1,190 @@
-# QA Agent – MVP
+# QA Agent MVP
 
-Agente interno para ayudar a POs y QAs a mejorar la calidad de las historias de usuario **antes del desarrollo**.
+AI-powered QA assistant designed to improve user story quality and automatically generate Gherkin test suites from functional documentation.
 
-El agente actúa como un QA senior virtual: analiza historias, detecta faltas de definición e incongruencias funcionales, y propone criterios de aceptación claros y testables.  
-No toma decisiones de negocio ni sustituye al equipo.
+This service provides two main capabilities:
 
----
+1. User Story Quality Analysis
+2. Automatic Test Generation from PDF Specifications
 
-## Qué hace
-
-Dada una historia de usuario, el agente devuelve un JSON estructurado con:
-
-- Resumen de calidad de la historia
-- Nivel de riesgo (LOW / MEDIUM / HIGH)
-- Faltas de definición detectadas
-- Criterios de aceptación propuestos (Gherkin)
-- Casos borde relevantes
-- Notas sobre automatización de tests
-
-El análisis se apoya en:
-- Un prompt de QA senior
-- Validación estricta por schema
-- Reintento automático con autocorrección
-- Conocimiento del proyecto (RAG)
+It is built with FastAPI and OpenAI models, includes schema validation, retry logic, and is ready to integrate into CI pipelines.
 
 ---
 
-## Conocimiento del proyecto (RAG)
+# FEATURES
 
-El agente puede usar documentación propia del proyecto (RAG – Retrieval Augmented Generation), por ejemplo:
+1. User Story Analysis
 
-- Definition of Done
-- Guías de QA
-- Decisiones funcionales estables
-- Limitaciones técnicas conocidas
-- Bugs recurrentes
+Endpoint:
+POST /analyze
 
-Estos documentos viven en archivos Markdown y se consultan dinámicamente para mejorar la precisión del análisis, sin entrenar el modelo ni almacenar conversaciones.
+Analyzes a user story and returns structured QA feedback including:
 
----
+* Summary
+* Risk level (LOW / MEDIUM / HIGH)
+* Missing definitions
+* Proposed acceptance criteria
+* Edge cases
+* Automation considerations
 
-## Requisitos
-
-- macOS / Linux
-- Python 3.9+
-- Cuenta en OpenAI Platform con billing activo
-- API Key de OpenAI
+The output is strictly validated against a schema to ensure consistency.
 
 ---
 
-## Instalación
+2. Test Generation from PDF
 
-1. Entrar en la carpeta del proyecto
+Endpoint:
+POST /generate-tests-pdf
 
+Accepts a functional specification in PDF format and automatically:
+
+* Detects distinct functional areas
+* Generates one Gherkin Feature per area
+* Generates multiple realistic Scenarios per feature
+* Saves .feature files to:
+
+generated_tests/
+
+The generated files are compatible with:
+
+* Cucumber
+* Behave
+* SpecFlow
+* CI pipelines
+
+---
+
+# REQUIREMENTS
+
+* Python 3.9+
+* OpenAI API key with billing enabled (If you know Pelicano, just ask him for it)
+
+---
+
+# INSTALLATION
+
+1. Clone the repository
+
+git clone <repository-url>
 cd qa-agent-mvp
 
-2. Crear entorno virtual
+2. Create and activate a virtual environment
 
-python3 -m venv .venv  
+python3 -m venv .venv
 source .venv/bin/activate
 
-3. Instalar dependencias
+3. Install dependencies
 
 pip install -r requirements.txt
 
+Make sure requirements.txt includes:
+
+fastapi
+uvicorn
+openai
+pydantic
+faiss-cpu
+numpy
+pypdf
+
+4. Configure OpenAI API key
+
+export OPENAI_API_KEY="your_api_key_here"  (If you know Pelicano, just ask him for it)
+
+Never commit API keys to the repository.
+
 ---
 
-## Configuración
+# RUNNING THE SERVICE
 
-Exportar la API key de OpenAI como variable de entorno:
-
-export OPENAI_API_KEY="tu_api_key_aqui"
-
-La API key no se guarda en el código ni en el repositorio.
-
----
-
-## Arrancar el servicio
+Start the API server:
 
 uvicorn api:app --reload
 
-Servicio disponible en:
+The service will run at:
 
-http://127.0.0.1:8000
+[http://127.0.0.1:8000](http://127.0.0.1:8000)
 
-Swagger UI:
+Swagger UI (interactive API documentation):
 
-http://127.0.0.1:8000/docs
+[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
 
 ---
 
-## Uso
+USAGE
 
-### Endpoint
+A) Analyze a User Story
+
+Go to /docs, select:
 
 POST /analyze
 
-### Ejemplo de petición
+Provide a JSON body like:
 
 {
-  "issue_id": "PROJ-203",
-  "title": "Registro de usuario con validación de edad",
-  "description": "Como usuario quiero registrarme en la plataforma creando una cuenta con mis datos personales.",
-  "acceptance_criteria": "El usuario debe poder completar un formulario de registro y ser mayor de 18 años."
+"issue_id": "PROJ-101",
+"title": "User Registration",
+"description": "As a user, I want to register with email and password.",
+"acceptance_criteria": "User must be over 18 years old."
 }
 
-### Respuesta
-
-JSON estructurado con:
-- Análisis de calidad
-- Riesgos
-- Criterios de aceptación
-- Casos borde
-- Consideraciones de automatización
+Execute the request to receive structured QA feedback.
 
 ---
 
-## Estructura del proyecto
+B) Generate Tests from a PDF
 
-qa-agent-mvp/
-├── api.py
-├── core/
-│   ├── agent.py
-│   ├── llm.py
-│   ├── prompt_builder.py
-│   ├── retry.py
-│   ├── validator.py
-│   ├── schemas.py
-│   └── rag.py
-├── tenants/
-│   └── default/
-│       ├── system_prompt.txt
-│       └── rag/
-│           └── *.md
-├── schemas/
-└── requirements.txt
+Go to /docs, select:
 
----
+POST /generate-tests-pdf
 
-## Qué NO hace el agente
+1. Click "Try it out"
+2. Upload a functional specification PDF
+3. Execute
 
-- No aprueba historias
-- No redefine requisitos de negocio
-- No prioriza
-- No inventa comportamiento no especificado
+The API will:
+
+* Process the document
+* Generate structured test definitions
+* Create .feature files in:
+
+generated_tests/
+
+You can immediately integrate these files into your automation framework.
 
 ---
 
-## Estado del proyecto
+# GIT AND GENERATED FILES
 
-- MVP funcional y estable
-- Uso local
-- Preparado para integración con Jira
-- Preparado para multi-equipo / multi-cliente
-- Base sólida para evolución a CI/CD
+The following are excluded from version control:
 
+* generated_tests/
+* .feature files
+* RAG index files
+* Virtual environments
+* Environment variable files
+
+Generated tests are considered build artifacts unless intentionally versioned.
+
+---
+
+# ARCHITECTURE NOTES
+
+* Strict JSON schema validation for LLM output
+* Retry mechanism for malformed responses
+* Modular ingestion layer (JSON, PDF)
+* Designed for future multi-tenant SaaS architecture
+* Ready for Jira / CI integration
+
+---
+
+# CURRENT STATUS
+
+* Stable MVP
+* Production-structured
+* CI-ready test output
+* Extensible ingestion pipeline
+
+---
+
+This project provides a foundation for a scalable AI-assisted QA workflow.
