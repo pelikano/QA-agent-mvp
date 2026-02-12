@@ -8,6 +8,8 @@ class Scenario(BaseModel):
 
 
 class Feature(BaseModel):
+    screen_name: str
+    feature_group: str
     feature_name: str
     description: str
     scenarios: List[Scenario]

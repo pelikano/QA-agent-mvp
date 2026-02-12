@@ -59,3 +59,39 @@ Do not omit any field.
 Return JSON only.
 
 Do not include explanations outside JSON.
+
+Each feature object MUST contain the following fields:
+
+- screen_name (string)
+- feature_group (string)
+- feature_name (string)
+- description (string)
+- scenarios (array)
+
+feature_group is mandatory.
+
+feature_group represents a logical business capability inside the screen.
+
+Example for Checkout screen:
+
+screen_name: "Checkout"
+feature_group: "Payment"
+feature_name: "Checkout - Payment Handling"
+
+If feature_group is missing, the output is invalid.
+
+screen_name must be clean (no special characters) and match the document section.
+
+If a SCREEN contains multiple logical flows,
+split them into separate feature_group blocks.
+
+Each feature_group must represent one coherent business capability.
+
+Example for Checkout screen:
+
+- Payment
+- Address Validation
+- Coupons
+- Order Confirmation
+
+Do not put unrelated scenarios in the same feature_group.

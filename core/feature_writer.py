@@ -1,6 +1,16 @@
 import os
 
+
 OUTPUT_DIR = "generated_tests"
+
+
+def normalize(name: str) -> str:
+    return (
+        name.lower()
+        .replace(" ", "_")
+        .replace("/", "_")
+        .replace("-", "_")
+    )
 
 
 def save_features_to_disk(test_suite: dict):
@@ -9,14 +19,15 @@ def save_features_to_disk(test_suite: dict):
 
     for feature in test_suite["features"]:
 
-        filename = (
-            feature["feature_name"]
-            .lower()
-            .replace(" ", "_")
-            .replace("/", "_")
-        ) + ".feature"
+        screen_folder = os.path.join(
+            OUTPUT_DIR,
+            normalize(feature["screen_name"])
+        )
 
-        filepath = os.path.join(OUTPUT_DIR, filename)
+        os.makedirs(screen_folder, exist_ok=True)
+
+        filename = normalize(feature["feature_group"]) + ".feature"
+        filepath = os.path.join(screen_folder, filename)
 
         with open(filepath, "w", encoding="utf-8") as f:
 
