@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>QA Agent Demo</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header>QA Agent Demo</header>
+
+<div class="container">
+
+    <!-- ========================= -->
+    <!-- API KEY SECTION -->
+    <!-- ========================= -->
+
+    <div class="controls">
+        <strong>OpenAI Configuration:</strong>
+        <input type="text" id="apiKeyInput" placeholder="Enter OpenAI API Key">
+        <button onclick="saveApiKey()">Save API Key</button>
+        <span id="apiStatus"></span>
+    </div>
+
+
+    <!-- ========================= -->
+    <!-- SCENARIO FOLDER SECTION -->
+    <!-- ========================= -->
+
+    <div class="config-row">
+        <label>Features Directory:</label>
+        <input type="text" id="featuresDirInput">
+        <button onclick="updateFeaturesDirectory()">Update</button>
+    </div>
+
+    <div id="currentPathInfo" class="path-info"></div>
+
+
+
+    <!-- ========================= -->
+    <!-- SCENARIO SECTION -->
+    <!-- ========================= -->
+
+    <div class="controls">
+        <strong>Scenario Management:</strong>
+
+        <label class="file-upload">
+            <input type="file" id="fileInput" hidden>
+            <button type="button" onclick="document.getElementById('fileInput').click()">
+                Upload File
+            </button>
+        </label>
+
+        <button id="generateButton" class="button-primary" onclick="generate()">
+            Generate Features
+        </button>
+
+        <button id="applyButton" class="button-disabled" disabled onclick="applyChanges()">
+            Apply Changes
+        </button>
+
+        <button id="downloadButton" class="button-disabled" disabled onclick="downloadProposed()">
+            Download Proposed ZIP
+        </button>
+
+        <span id="loader" class="loader">Processing...</span>
+    </div>
+
+    <!-- ========================= -->
+    <!-- MAIN LAYOUT -->
+    <!-- ========================= -->
+
+    <div class="layout">
+        <div class="panel">
+            <h2>Current Features</h2>
+            <div id="currentFiles"></div>
+        </div>
+
+        <div class="panel">
+            <h2>Proposed Changes</h2>
+            <div id="proposedFiles"></div>
+        </div>
+    </div>
+
+    <!-- ========================= -->
+    <!-- FILE CONTENT -->
+    <!-- ========================= -->
+
+    <div class="panel" style="margin-top:20px;">
+        <h2>File Content</h2>
+        <div id="diffViewer" class="diff-container"></div>
+    </div>
+
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

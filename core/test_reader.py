@@ -1,6 +1,6 @@
 import os
-
-TEST_DIR = "generated_tests"
+from core.config import BASE_FEATURES_DIR
+TEST_DIR = BASE_FEATURES_DIR
 
 
 def read_existing_tests():

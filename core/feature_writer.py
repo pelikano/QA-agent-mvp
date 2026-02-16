@@ -1,7 +1,5 @@
 import os
-
-
-OUTPUT_DIR = "generated_tests"
+from core import config
 
 
 def normalize(name: str) -> str:
@@ -13,14 +11,17 @@ def normalize(name: str) -> str:
     )
 
 
-def save_features_to_disk(test_suite: dict):
+def save_features_to_disk(test_suite: dict, base_path: str = None):
 
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    # Use dynamic base directory
+    output_dir = base_path if base_path else config.BASE_FEATURES_DIR
+
+    os.makedirs(output_dir, exist_ok=True)
 
     for feature in test_suite["features"]:
 
         screen_folder = os.path.join(
-            OUTPUT_DIR,
+            output_dir,
             normalize(feature["screen_name"])
         )
 

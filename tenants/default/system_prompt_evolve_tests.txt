@@ -70,6 +70,9 @@ feature_name: "Checkout - Payment Handling"
 
 If feature_group is missing, the output is invalid.
 
+feature_group must be a short snake_case string with no spaces.
+Example: payment, address_validation, coupons
+
 screen_name must be clean (no special characters) and match the document section.
 
 If a SCREEN contains multiple logical flows,
