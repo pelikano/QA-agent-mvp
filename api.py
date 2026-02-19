@@ -7,10 +7,11 @@ import tempfile
 import os
 import zipfile
 import shutil
+import difflib
 
 from core.agent import run_agent
 from core.feature_structure import build_feature_structure
-from core.update_engine import apply_update_plan
+from core.update_engine import apply_update_plan, simulate_update_plan
 from core.retry import retry_with_correction
 from core.llm import call_llm
 from core.sync_prompt_builder import build_sync_prompt
@@ -80,6 +81,14 @@ async def sync_tests(
             prompt=prompt,
             schema_cls=UpdatePlan
         )
+
+        simulated_new_content = simulate_update_plan(update_plan)
+
+        diff = list(difflib.unified_diff(
+            current_tests.splitlines(),
+            simulated_new_content.splitlines(),
+            lineterm=""
+        ))
 
         return {
             "mode": "sync",

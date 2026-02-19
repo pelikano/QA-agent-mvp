@@ -29,6 +29,16 @@ You MUST compare new_functional_input against existing_structure.
 
 4. Only use create_feature if the feature truly does not exist.
 
+FEATURE MATCHING RULE:
+
+When comparing features:
+
+- If the screen name matches an existing feature name (even partially),
+  you MUST treat that feature as existing.
+- Minor differences in wording, language or suffixes do NOT justify create_feature.
+- Never create_feature if a similar feature already exists.
+
+
 ------------------------------------------------------------
 UPDATE STRATEGY
 ------------------------------------------------------------

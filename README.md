@@ -202,7 +202,10 @@ Returns:
 # ⚙ Setup
 
 ```bash
-pip install -r requirements.txt
+python3 -m venv venv
+source venv/bin/activate
+python3 -m pip install -r requirements.txt
+export OPENAI_API_KEY="your api key here"
 uvicorn api:app --reload
 ```
 
@@ -223,15 +226,3 @@ Built for control.
 Ready for enterprise.
 
 
----
-
-# ⚙ Setup
-
-```bash
-python3 -m venv venv
-source venv/bin/activate
-python3 -m pip install -r requirements.txt
-export OPENAI_API_KEY="your api key here"
-uvicorn api:app --reload
-
-```

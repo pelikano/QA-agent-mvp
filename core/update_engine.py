@@ -5,6 +5,27 @@ from datetime import datetime
 from core import config
 
 
+def is_cosmetic_change(old: str, new: str) -> bool:
+    if not old or not new:
+        return False
+
+    normalized_old = old.strip().lower().rstrip(".")
+    normalized_new = new.strip().lower().rstrip(".")
+
+    trivial_replacements = [
+        ("should", "must"),
+        ("must", "should")
+    ]
+
+    if normalized_old == normalized_new:
+        return True
+
+    for a, b in trivial_replacements:
+        if normalized_old.replace(a, b) == normalized_new:
+            return True
+
+    return False
+
 def _backup_file(path):
     if not os.path.exists(path):
         return
@@ -63,24 +84,35 @@ def apply_update_plan(update_plan: dict):
 
         # UPDATE STEP
         elif action == "update_step":
+            if is_cosmetic_change(change.old_value, change.new_value):
+                continue
             if not os.path.exists(feature_path):
                 raise ValueError("Feature does not exist for update_step")
 
-            step_index = change.get("step_index")
+            old_value = change.get("old_value")
             new_value = change.get("new_value")
 
-            if step_index is None or new_value is None:
-                raise ValueError("update_step requires step_index and new_value")
+            if not old_value or not new_value:
+                raise ValueError("update_step requires old_value and new_value")
 
             with open(feature_path, "r", encoding="utf-8") as f:
                 lines = f.readlines()
 
-            if not (0 <= step_index < len(lines)):
-                raise ValueError("Invalid step_index")
+            found = False
+
+            for i, line in enumerate(lines):
+                if old_value.strip() in line.strip():
+                    lines[i] = new_value.rstrip() + "\n"
+                    found = True
+                    break
+
+            if not found:
+                raise ValueError("Old value not found in file")
 
             _backup_file(feature_path)
 
-            lines[step_index] = new_value.rstrip() + "\n"
+            with open(feature_path, "w", encoding="utf-8") as f:
+                f.writelines(lines)
 
             with open(feature_path, "w", encoding="utf-8") as f:
                 f.writelines(lines)
@@ -117,3 +149,48 @@ def apply_update_plan(update_plan: dict):
 
         else:
             raise ValueError(f"Unsupported action: {action}")
+
+def simulate_update_plan(update_plan: dict) -> str:
+    """
+    Simula cambios en memoria y devuelve el nuevo contenido
+    sin escribir en disco.
+    """
+
+    base = config.BASE_FEATURES_DIR
+    simulated_content = read_all_features(base)
+
+    if "changes" not in update_plan:
+        return simulated_content
+
+    lines = simulated_content.splitlines()
+
+    for change in update_plan.get("changes", []):
+
+        if change["action"] != "update_step":
+            continue
+
+        old_value = change.get("old_value")
+        new_value = change.get("new_value")
+
+        if not old_value or not new_value:
+            continue
+
+        for i, line in enumerate(lines):
+            if old_value.strip() in line.strip():
+                lines[i] = new_value.rstrip()
+                break
+
+    return "\n".join(lines)
+
+
+def read_all_features(base_dir: str) -> str:
+    content = []
+
+    for root, _, files in os.walk(base_dir):
+        for file in files:
+            if file.endswith(".feature"):
+                path = os.path.join(root, file)
+                with open(path, "r", encoding="utf-8") as f:
+                    content.append(f.read())
+
+    return "\n".join(content)
