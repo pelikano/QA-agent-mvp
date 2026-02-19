@@ -1,252 +1,237 @@
-# QA Agent MVP
 
-AI-powered QA assistant designed to improve user story quality and automatically synchronize Gherkin test suites with evolving functional documentation.
+# QA Agent – AI Test Synchronization Engine
 
-This service provides two main capabilities:
+## 🚀 Product Vision
 
-1. User Story Quality Analysis
-2. Autonomous Test Synchronization from Functional Documents (PDF, DOCX, TXT or raw text)
+QA Agent is an AI-powered deterministic test synchronization engine designed to keep Gherkin test suites aligned with evolving functional documentation.
 
-It is built with FastAPI and OpenAI models, includes strict schema validation, retry logic, JSON enforcement, and is ready to integrate into CI pipelines.
+It is NOT a test generator.
+It is NOT a rewrite engine.
 
----
+It is a controlled, incremental, patch-based synchronization system.
 
-# FEATURES
-
-1. User Story Analysis
-
-Endpoint:
-POST /analyze
-
-Analyzes a user story and returns structured QA feedback including:
-
-* Summary
-* Risk level (LOW / MEDIUM / HIGH)
-* Missing definitions
-* Proposed acceptance criteria
-* Edge cases
-* Automation considerations
-
-The output is strictly validated against a schema to ensure consistency.
+Designed for:
+- QA Teams
+- Automation Engineers
+- Product Owners
+- Enterprises needing traceable test evolution
 
 ---
 
-2. Autonomous Test Synchronization
+# 🎯 Core Value Proposition
 
-Endpoint:
-POST /sync-tests
-
-Accepts:
-
-* PDF
-* DOCX
-* TXT
-* Raw text input
-
-The agent automatically decides whether to:
-
-A) Generate an initial test suite (if no tests exist)
-B) Evolve an existing suite (if tests already exist)
-
-This makes the system a synchronization engine rather than a simple generator.
-
-The process:
-
-* Detects SCREEN sections
-* Generates one Gherkin Feature per screen
-* Generates structured Given / When / Then scenarios
-* Modifies only impacted scenarios
-* Marks obsolete scenarios as @deprecated
-* Preserves unchanged tests
-* Adds new features when required
-
-All output is strictly validated against a JSON schema before being written to disk.
-
-Generated files are saved in:
-
-generated_tests/
-
-The generated files are compatible with:
-
-* Cucumber
-* Behave
-* SpecFlow
-* CI pipelines
+✅ Synchronizes tests with evolving requirements  
+✅ Never rewrites full features  
+✅ Applies minimal incremental patches  
+✅ Preserves step consistency and reuse  
+✅ Maintains deterministic Gherkin structure  
+✅ Safe, versioned modifications  
 
 ---
 
-# DRY RUN MODE (VERY IMPORTANT)
+# 🧠 Architectural Philosophy
 
-The endpoint supports:
+## Single Source of Truth
 
-dry_run = true | false
+Existing test suites are authoritative.
 
-If dry_run = true:
+When reading new functional documentation, the engine:
 
-* The system generates the full updated test suite
-* Returns the structured JSON response
-* DOES NOT modify any .feature files
-* Ideal for previewing changes safely
+1. Loads current test suite.
+2. Treats all existing scenarios as ground truth.
+3. Compares documentation against tests.
+4. Produces a minimal `UpdatePlan`.
+5. Applies incremental patch operations.
 
-If dry_run = false:
-
-* The test suite is written to disk
-* Existing features are overwritten if modified
-* New features are created
-* Deprecated scenarios are marked accordingly
-
-Recommended workflow:
-
-1) First call with dry_run=true to inspect changes
-2) If satisfied, call again with dry_run=false to apply changes
-
-This prevents accidental overwrites and allows safe CI integration.
+No full rewrites.
+No uncontrolled regeneration.
 
 ---
 
-# REQUIREMENTS
+# 🔧 Technical Architecture
 
-* Python 3.9+
-* OpenAI API key with billing enabled (If you know Pelicano, just ask him for it)
+## Backend
+
+- FastAPI
+- OpenAI (JSON strict mode)
+- Pydantic validation
+- Incremental patch engine
+- Automatic versioning backups
+- Deterministic UpdatePlan schema
 
 ---
 
-# INSTALLATION
+## UpdatePlan Schema
 
-1. Clone the repository
+```python
+class ChangeAction(BaseModel):
+    action: str  # create_feature | delete_feature | create_scenario | delete_scenario | update_step
+    screen: str
+    feature: str
+    scenario: Optional[str]
+    step_index: Optional[int]
+    old_value: Optional[str]
+    new_value: Optional[str]
 
-git clone <repository-url>
-cd qa-agent-mvp
+class UpdatePlan(BaseModel):
+    changes: List[ChangeAction]
+```
 
-2. Create and activate a virtual environment
+The LLM is strictly forced to return:
 
-python3 -m venv .venv
-source .venv/bin/activate
+```json
+{
+  "changes": [ ... ]
+}
+```
 
-3. Install dependencies
+---
 
+# 🔒 Robustness & Safety
+
+## Strict JSON Mode
+- `response_format={"type": "json_object"}`
+- Temperature = 0
+- Two-phase validation
+
+## Patch Engine Safeguards
+- Structural validation per change
+- Step index validation
+- Required field enforcement
+- Unsupported action rejection
+
+## Automatic Backups
+
+Before any modification:
+
+```
+_history/feature.feature.YYYYMMDD_HHMMSS.bak
+```
+
+Enables manual rollback at any time.
+
+---
+
+# 🔁 Workflow
+
+## 1. Sync Tests
+
+`POST /sync-tests`
+
+- Accepts PDF, DOCX, TXT, or raw text
+- Loads current features
+- Returns UpdatePlan only
+
+## 2. Apply Changes
+
+`POST /apply-proposed`
+
+- Applies incremental patch
+- Creates backups
+- Does NOT call AI again
+
+---
+
+# 🧪 Gherkin Strategy
+
+The engine enforces:
+
+- Consistent Given / When / Then formatting
+- Step reuse across scenarios
+- Parameterization over duplication
+- Screen name consistency
+- Stable grammar for automation reuse
+
+Designed to support downstream automation frameworks without rewriting steps.
+
+---
+
+# 🖥 UI Capabilities
+
+- Feature folder selector
+- IDE-style viewer
+- Diff preview
+- Dry-run first workflow
+- Manual apply confirmation
+- API key configuration
+
+---
+
+# 🏢 Enterprise Positioning
+
+QA Agent is suitable for:
+
+- Large-scale test suites
+- Regulated environments
+- CI/CD integration
+- Multi-team collaboration
+- Test governance frameworks
+
+Future extensions:
+- Multi-tenant isolation
+- Git integration
+- Audit trail logging
+- Quality scoring engine
+- Automation coverage insights
+
+---
+
+# 📈 Why This Is Different
+
+Most AI tools regenerate tests.
+QA Agent synchronizes them deterministically.
+
+This reduces:
+- Flaky automation
+- Step duplication
+- Test drift
+- Manual QA maintenance effort
+
+---
+
+# 🧩 System Status Endpoint
+
+`GET /system-status`
+
+Returns:
+- API configuration state
+- Current features directory
+
+---
+
+# ⚙ Setup
+
+```bash
 pip install -r requirements.txt
+uvicorn api:app --reload
+```
 
-Make sure requirements.txt includes:
+Then open:
 
-fastapi
-uvicorn
-openai
-pydantic
-faiss-cpu
-numpy
-pypdf
-python-docx
-
-4. Configure OpenAI API key
-
-export OPENAI_API_KEY="your_api_key_here"  (If you know Pelicano, just ask him for it)
-
-Never commit API keys to the repository.
+http://localhost:8000
 
 ---
 
-# RUNNING THE SERVICE
+# 📌 Summary
 
-Start the API server:
+QA Agent is an AI-driven test synchronization engine built for deterministic, safe, incremental evolution of Gherkin suites.
 
+It bridges the gap between evolving product documentation and stable automated testing.
+
+Designed for production.
+Built for control.
+Ready for enterprise.
+
+
+---
+
+# ⚙ Setup
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+python3 -m pip install -r requirements.txt
+export OPENAI_API_KEY="your api key here"
 uvicorn api:app --reload
 
-The service will run at:
-
-http://127.0.0.1:8000
-
-Swagger UI (interactive API documentation):
-
-http://127.0.0.1:8000/docs
-
----
-
-USAGE
-
-A) Analyze a User Story
-
-Go to /docs, select:
-
-POST /analyze
-
-Provide a JSON body like:
-
-{
-  "issue_id": "PROJ-101",
-  "title": "User Registration",
-  "description": "As a user, I want to register with email and password.",
-  "acceptance_criteria": "User must be over 18 years old."
-}
-
-Execute the request to receive structured QA feedback.
-
----
-
-B) Synchronize Tests with Functional Documentation
-
-Go to /docs, select:
-
-POST /sync-tests
-
-You can:
-
-1. Upload a PDF / DOCX / TXT file
-OR
-2. Paste text directly
-
-Then choose dry_run:
-
-* dry_run=true → preview changes only
-* dry_run=false → apply changes to .feature files
-
-The API will:
-
-* Detect functional screens
-* Generate or evolve Gherkin features
-* Enforce strict Given / When / Then structure
-* Validate output schema
-* Save .feature files in:
-
-generated_tests/
-
----
-
-# GIT AND GENERATED FILES
-
-The following are excluded from version control:
-
-* generated_tests/
-* .feature files
-* RAG index files
-* Virtual environments
-* Environment variable files
-
-Generated tests are considered build artifacts unless intentionally versioned.
-
----
-
-# ARCHITECTURE NOTES
-
-* Strict JSON schema validation for LLM output
-* Automatic retry mechanism for malformed responses
-* Single synchronization endpoint (no duplicated logic)
-* Modular ingestion layer (PDF, DOCX, TXT, raw text)
-* Tests are treated as the source of truth
-* Evolution engine detects changes instead of regenerating blindly
-* Ready for Jira / CI integration
-
----
-
-# CURRENT STATUS
-
-* Stable MVP
-* Unified synchronization architecture
-* Strict contract-based LLM interaction
-* Gherkin-compliant output
-* CI-ready test output
-* Extensible ingestion pipeline
-
----
-
-This project provides a foundation for a scalable AI-assisted QA workflow and intelligent automated test maintenance.
+```

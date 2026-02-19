@@ -134,6 +134,7 @@ async function generate() {
 
         proposedData = data.result;
         
+        console.log(data);
         renderProposed(proposedData);
         updateActionButtons()
 
@@ -189,66 +190,39 @@ async function applyChanges() {
 
 function renderProposed(data) {
 
+    console.log("Rendering proposed:", data);
+
     const container = document.getElementById("proposedFiles");
+
+    if (!container) {
+        console.error("Proposed container not found");
+        return;
+    }
+
     container.innerHTML = "";
 
-    if (!data || !data.features) return;
+    if (!data || !data.changes || data.changes.length === 0) {
+        container.innerHTML = "<p>No changes proposed.</p>";
+        return;
+    }
 
-    data.features.forEach(feature => {
+    data.changes.forEach(change => {
 
-        const screen = feature.screen_name || "General";
-        const fileName = feature.feature_name + ".feature";
+        const block = document.createElement("div");
+        block.style.padding = "10px";
+        block.style.marginBottom = "8px";
+        block.style.background = "#f8f9fa";
+        block.style.border = "1px solid #ddd";
+        block.style.borderRadius = "6px";
 
-        // Add screen header once
-        if (!container.querySelector(`[data-screen="${screen}"]`)) {
-            const screenTitle = document.createElement("div");
-            screenTitle.innerHTML = `<strong>${screen}</strong>`;
-            screenTitle.setAttribute("data-screen", screen);
-            container.appendChild(screenTitle);
-        }
+        block.innerHTML = `
+            <div><strong>Action:</strong> ${change.action}</div>
+            <div><strong>Screen:</strong> ${change.screen}</div>
+            <div><strong>Feature:</strong> ${change.feature}</div>
+            <div><strong>Scenario:</strong> ${change.scenario || "-"}</div>
+        `;
 
-        const fileItem = document.createElement("div");
-
-        let isNew = true;
-
-        if (currentStructure[screen] &&
-            currentStructure[screen][fileName]) {
-            isNew = false;
-        }
-
-        fileItem.className = isNew
-            ? "file-item diff-added"
-            : "file-item";
-
-        fileItem.innerText = fileName;
-
-        fileItem.onclick = () => {
-
-            const newContent = buildGherkinFromFeature(feature);
-
-            let oldContent = "";
-
-            if (currentStructure[screen] &&
-                currentStructure[screen][fileName]) {
-                oldContent = currentStructure[screen][fileName];
-            }
-
-            if (!oldContent) {
-
-                document.getElementById("diffViewer").innerHTML =
-                    newContent.split("\n")
-                        .map(line =>
-                            `<div class="diff-line diff-added">+ ${escapeHtml(line)}</div>`
-                        ).join("");
-
-                return;
-            }
-
-            const diffHtml = generateDiff(oldContent, newContent);
-            document.getElementById("diffViewer").innerHTML = diffHtml;
-        };
-
-        container.appendChild(fileItem);
+        container.appendChild(block);
     });
 }
 

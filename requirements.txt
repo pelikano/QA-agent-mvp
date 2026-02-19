@@ -1,3 +1,4 @@
+
 openai
 pydantic
 fastapi
@@ -5,5 +6,5 @@ uvicorn
 faiss-cpu
 numpy
 python-docx
-
-
+python-multipart
+pypdf
