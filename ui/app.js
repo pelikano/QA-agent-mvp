@@ -4,15 +4,20 @@
 
 let proposedData = null;
 let currentStructure = {};
-let systemStatus = null;
+let proposedDiff = [];
+let proposedDiffMap = {}; // file -> diff lines
+
+
+// ==========================================
+// SYSTEM STATUS
+// ==========================================
 
 async function loadSystemStatus() {
-
     const res = await fetch("/system-status");
     const data = await res.json();
 
-    // API status
     const apiStatus = document.getElementById("apiStatus");
+
     if (data.api_configured) {
         apiStatus.textContent = "API Key Configured";
         apiStatus.style.color = "green";
@@ -21,49 +26,10 @@ async function loadSystemStatus() {
         apiStatus.style.color = "red";
     }
 
-    // Directory field
-    const dirInput = document.getElementById("featuresDirInput");
-    dirInput.value = data.features_directory;
+    document.getElementById("featuresDirInput").value =
+        data.features_directory;
 }
 
-
-
-// ==========================================
-// API KEY MANAGEMENT
-// ==========================================
-
-async function checkApiKey() {
-    const res = await fetch("/check-api-key");
-    const data = await res.json();
-
-    const status = document.getElementById("apiStatus");
-
-    if (data.configured) {
-        status.textContent = "API Key Configured";
-        status.style.color = "green";
-    } else {
-        status.textContent = "No API Key";
-        status.style.color = "red";
-    }
-}
-
-async function saveApiKey() {
-
-    const key = document.getElementById("apiKeyInput").value;
-
-    const res = await fetch("/set-api-key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ api_key: key })
-    });
-
-    if (res.status === 200) {
-        alert("API Key saved");
-        checkApiKey();
-    } else {
-        alert("Invalid API Key");
-    }
-}
 
 // ==========================================
 // LOAD CURRENT FEATURES
@@ -92,18 +58,14 @@ async function loadCurrentFeatures() {
             fileItem.innerText = file;
 
             fileItem.onclick = () => {
-                document.getElementById("diffViewer").innerHTML =
-                    data[screen][file]
-                        .split("\n")
-                        .map(line =>
-                            `<div class="diff-line diff-unchanged">${escapeHtml(line)}</div>`
-                        ).join("");
+                renderFile(screen, file);
             };
 
             container.appendChild(fileItem);
         });
     });
 }
+
 
 // ==========================================
 // GENERATE (DRY RUN)
@@ -125,6 +87,7 @@ async function generate() {
     formData.append("file", file);
 
     try {
+
         const response = await fetch("/sync-tests?dry_run=true", {
             method: "POST",
             body: formData
@@ -133,14 +96,12 @@ async function generate() {
         const data = await response.json();
 
         proposedData = data.result;
-        
-        console.log(data);
+        proposedDiff = data.diff || [];
+
+        buildDiffMap();
+
         renderProposed(proposedData);
-        updateActionButtons()
-
-        document.getElementById("applyButton").disabled = false;
-        document.getElementById("downloadButton").disabled = false;
-
+        updateActionButtons();
 
     } catch (error) {
         alert("Error generating features.");
@@ -150,17 +111,20 @@ async function generate() {
     hideLoader();
 }
 
+
 // ==========================================
 // APPLY CHANGES
 // ==========================================
 
 async function applyChanges() {
 
-    if (!proposedData) return;
+    if (!proposedData || !proposedData.changes || proposedData.changes.length === 0)
+        return;
 
     showLoader();
 
     try {
+
         await fetch("/apply-proposed", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -168,12 +132,13 @@ async function applyChanges() {
         });
 
         proposedData = null;
+        proposedDiff = [];
+        proposedDiffMap = {};
+
         updateActionButtons();
 
-        document.getElementById("applyButton").disabled = true;
-        document.getElementById("downloadButton").disabled = true;
-
         await loadCurrentFeatures();
+
         document.getElementById("proposedFiles").innerHTML = "";
         document.getElementById("diffViewer").innerHTML = "";
 
@@ -184,21 +149,14 @@ async function applyChanges() {
     hideLoader();
 }
 
+
 // ==========================================
 // RENDER PROPOSED
 // ==========================================
 
 function renderProposed(data) {
 
-    console.log("Rendering proposed:", data);
-
     const container = document.getElementById("proposedFiles");
-
-    if (!container) {
-        console.error("Proposed container not found");
-        return;
-    }
-
     container.innerHTML = "";
 
     if (!data || !data.changes || data.changes.length === 0) {
@@ -216,70 +174,117 @@ function renderProposed(data) {
         block.style.borderRadius = "6px";
 
         block.innerHTML = `
-            <div><strong>Action:</strong> ${change.action}</div>
-            <div><strong>Screen:</strong> ${change.screen}</div>
-            <div><strong>Feature:</strong> ${change.feature}</div>
-            <div><strong>Scenario:</strong> ${change.scenario || "-"}</div>
+            <div><strong>${change.action}</strong></div>
+            <div>${change.screen} → ${change.feature}</div>
+            <div>${change.scenario || ""}</div>
         `;
 
         container.appendChild(block);
     });
 }
 
+
 // ==========================================
-// BUILD GHERKIN FROM FEATURE
+// DIFF PER FILE
 // ==========================================
 
-function buildGherkinFromFeature(feature) {
+function buildDiffMap() {
 
-    let content = `Feature: ${feature.feature_name}\n\n`;
+    proposedDiffMap = {};
 
-    feature.scenarios.forEach(scenario => {
+    if (!proposedDiff || proposedDiff.length === 0)
+        return;
 
-        content += `  Scenario: ${scenario.name}\n`;
+    let currentFile = null;
 
-        scenario.steps.forEach(step => {
-            content += `    ${step}\n`;
-        });
+    proposedDiff.forEach(line => {
 
-        content += "\n";
+        if (line.startsWith("+++ ")) {
+            currentFile = line.replace("+++ ", "").trim();
+            proposedDiffMap[currentFile] = [];
+            return;
+        }
+
+        if (!currentFile) return;
+
+        proposedDiffMap[currentFile].push(line);
     });
-
-    return content;
 }
 
-// ==========================================
-// DIFF ENGINE
-// ==========================================
 
-function generateDiff(oldText, newText) {
+function renderFile(screen, file) {
 
-    const oldLines = oldText.split("\n");
-    const newLines = newText.split("\n");
+    const viewer = document.getElementById("diffViewer");
+    viewer.innerHTML = "";
 
-    const maxLength = Math.max(oldLines.length, newLines.length);
-    let html = "";
+    const rawContent = currentStructure[screen][file];
 
-    for (let i = 0; i < maxLength; i++) {
+    const fullPath = `${screen}/${file}`;
 
-        const oldLine = oldLines[i] || "";
-        const newLine = newLines[i] || "";
+    // If no proposed changes → show normal
+    if (!proposedData || !proposedData.changes || proposedData.changes.length === 0) {
 
-        if (oldLine === newLine) {
-            html += `<div class="diff-line diff-unchanged">${escapeHtml(newLine)}</div>`;
-        }
-        else {
-            if (oldLine) {
-                html += `<div class="diff-line diff-removed">- ${escapeHtml(oldLine)}</div>`;
-            }
-            if (newLine) {
-                html += `<div class="diff-line diff-added">+ ${escapeHtml(newLine)}</div>`;
-            }
-        }
+        viewer.innerHTML = rawContent
+            .split("\n")
+            .map(line =>
+                `<div class="diff-line diff-unchanged">${escapeHtml(line)}</div>`
+            ).join("");
+
+        return;
     }
 
-    return html;
+    // If file has no diff → show normal
+    if (!proposedDiffMap[fullPath]) {
+
+        viewer.innerHTML = rawContent
+            .split("\n")
+            .map(line =>
+                `<div class="diff-line diff-unchanged">${escapeHtml(line)}</div>`
+            ).join("");
+
+        return;
+    }
+
+    // Show Git style diff
+    proposedDiffMap[fullPath].forEach(line => {
+
+        let className = "diff-unchanged";
+
+        if (line.startsWith("+") && !line.startsWith("+++")) {
+            className = "diff-added";
+        }
+        else if (line.startsWith("-") && !line.startsWith("---")) {
+            className = "diff-removed";
+        }
+
+        viewer.innerHTML +=
+            `<div class="diff-line ${className}">${escapeHtml(line)}</div>`;
+    });
 }
+
+
+// ==========================================
+// BUTTON STATE
+// ==========================================
+
+function updateActionButtons() {
+
+    const applyBtn = document.getElementById("applyButton");
+
+    if (!applyBtn) return;   // 🔥 PROTECCIÓN CLAVE
+
+    if (proposedData && proposedData.changes && proposedData.changes.length > 0) {
+
+        applyBtn.disabled = false;
+        applyBtn.className = "button-success";
+
+    } else {
+
+        applyBtn.disabled = true;
+        applyBtn.className = "button-disabled";
+    }
+}
+
 
 // ==========================================
 // UTILITIES
@@ -300,117 +305,22 @@ function hideLoader() {
     document.getElementById("loader").style.display = "none";
 }
 
-async function downloadZip() {
-
-    if (!proposedData) return;
-
-    const response = await fetch("/download-proposed", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(proposedData)
-    });
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "proposed_tests.zip";
-    a.click();
-}
-
-function updateActionButtons() {
-
-    const applyBtn = document.getElementById("applyButton");
-    const downloadBtn = document.getElementById("downloadButton");
-
-    if (proposedData && proposedData.features && proposedData.features.length > 0) {
-
-        applyBtn.disabled = false;
-        downloadBtn.disabled = false;
-
-        applyBtn.className = "button-success";
-        downloadBtn.className = "button-success";
-
-    } else {
-
-        applyBtn.disabled = true;
-        downloadBtn.disabled = true;
-
-        applyBtn.className = "button-disabled";
-        downloadBtn.className = "button-disabled";
-    }
-}
-
-async function saveFeaturesDirectory() {
-
-    const path = document.getElementById("featuresPathInput").value;
-
-    const res = await fetch("/set-features-directory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ directory: path })
-    });
-
-    const data = await res.json();
-
-    if (res.status === 200) {
-        alert("Directory updated");
-        loadCurrentFeatures();
-    } else {
-        alert(data.error);
-    }
-}
-
-async function updateFeaturesDirectory() {
-
-    const newDir = document.getElementById("featuresDirInput").value;
-
-    const res = await fetch("/set-features-directory", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ directory: newDir })
-    });
-
-    const data = await res.json();
-
-    if (res.status !== 200) {
-        alert(data.error || "Error updating directory");
-        return;
-    }
-
-    alert("Directory updated");
-
-    // Recargar estructura con el nuevo path
-    await loadSystemStatus();
-    await loadCurrentFeatures();
-
-    // Limpiar proposed
-    proposedData = null;
-    updateActionButtons();
-    document.getElementById("proposedFiles").innerHTML = "";
-    document.getElementById("diffViewer").innerHTML = "";
-}
-
-
 
 // ==========================================
-// INITIALIZE
+// INIT
 // ==========================================
 
 document.addEventListener("DOMContentLoaded", async () => {
 
     proposedData = null;
-    currentData = null;
-    currentStructure = {};
+    proposedDiff = [];
+    proposedDiffMap = {};
 
     updateActionButtons();
     hideLoader();
 
-    await loadSystemStatus();     // carga API status + path
-    await loadCurrentFeatures();  // carga árbol actual
+    await loadSystemStatus();
+    await loadCurrentFeatures();
 
     document.getElementById("diffViewer").innerHTML = "";
 });
-
-

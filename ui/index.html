@@ -10,21 +10,12 @@
 
 <div class="container">
 
-    <!-- ========================= -->
-    <!-- API KEY SECTION -->
-    <!-- ========================= -->
-
     <div class="controls">
         <strong>OpenAI Configuration:</strong>
         <input type="text" id="apiKeyInput" placeholder="Enter OpenAI API Key">
         <button onclick="saveApiKey()">Save API Key</button>
         <span id="apiStatus"></span>
     </div>
-
-
-    <!-- ========================= -->
-    <!-- SCENARIO FOLDER SECTION -->
-    <!-- ========================= -->
 
     <div class="config-row">
         <label>Features Directory:</label>
@@ -33,12 +24,6 @@
     </div>
 
     <div id="currentPathInfo" class="path-info"></div>
-
-
-
-    <!-- ========================= -->
-    <!-- SCENARIO SECTION -->
-    <!-- ========================= -->
 
     <div class="controls">
         <strong>Scenario Management:</strong>
@@ -58,16 +43,8 @@
             Apply Changes
         </button>
 
-        <button id="downloadButton" class="button-disabled" disabled onclick="downloadProposed()">
-            Download Proposed ZIP
-        </button>
-
         <span id="loader" class="loader">Processing...</span>
     </div>
-
-    <!-- ========================= -->
-    <!-- MAIN LAYOUT -->
-    <!-- ========================= -->
 
     <div class="layout">
         <div class="panel">
@@ -80,10 +57,6 @@
             <div id="proposedFiles"></div>
         </div>
     </div>
-
-    <!-- ========================= -->
-    <!-- FILE CONTENT -->
-    <!-- ========================= -->
 
     <div class="panel" style="margin-top:20px;">
         <h2>File Content</h2>
