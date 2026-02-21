@@ -1,17 +1,15 @@
 from fastapi import FastAPI, UploadFile, File, Body, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from openai import OpenAI
 
 import tempfile
 import os
-import zipfile
-import shutil
 import difflib
 
 from core.agent import run_agent
 from core.feature_structure import build_feature_structure
-from core.update_engine import apply_update_plan, simulate_update_plan
+from core.update_engine import apply_update_plan
 from core.retry import retry_with_correction
 from core.llm import call_llm
 from core.sync_prompt_builder import build_sync_prompt
@@ -62,28 +60,33 @@ async def sync_tests(
         else:
             new_document = text_input
 
-        # 2️⃣ Read full test suite (raw text)
+        # 2️⃣ Read full suite
         current_tests = read_existing_tests() or ""
 
-        # 3️⃣ Build structured representation
+        # 3️⃣ Build structure
         existing_structure = build_feature_structure(config.BASE_FEATURES_DIR)
 
-        # 4️⃣ Build sync prompt
+        # 4️⃣ Prompt
         prompt = build_sync_prompt(
             current_tests=current_tests,
             existing_structure=existing_structure,
             new_document=new_document
         )
 
-        # 5️⃣ Call LLM
+        # 5️⃣ LLM
         update_plan = retry_with_correction(
             call_fn=call_llm,
             prompt=prompt,
             schema_cls=UpdatePlan
         )
 
-        simulated_new_content = simulate_update_plan(update_plan)
+        # 6️⃣ Simulate
+        simulated_new_content = apply_update_plan(
+            update_plan,
+            simulate=True
+        )
 
+        # 7️⃣ Diff global (simple y fiable)
         diff = list(difflib.unified_diff(
             current_tests.splitlines(),
             simulated_new_content.splitlines(),
@@ -92,7 +95,8 @@ async def sync_tests(
 
         return {
             "mode": "sync",
-            "result": update_plan
+            "result": update_plan,
+            "diff": diff
         }
 
     except Exception as e:
@@ -101,26 +105,15 @@ async def sync_tests(
             content={"error": str(e)}
         )
 
-
-
 # =========================================================
 # APPLY PROPOSED (NO IA CALL)
 # =========================================================
 
 @app.post("/apply-proposed")
-async def apply_proposed(payload: dict = Body(...)):
-
+async def apply_proposed(update_plan: dict):
     try:
-        if not payload.get("changes"):
-            return JSONResponse(
-                status_code=400,
-                content={"error": "No proposed features provided"}
-            )
-
-        apply_update_plan(payload)
-
-        return {"status": "Changes applied successfully"}
-
+        apply_update_plan(update_plan, simulate=False)
+        return {"status": "ok"}
     except Exception as e:
         return JSONResponse(
             status_code=500,

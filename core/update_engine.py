@@ -1,9 +1,12 @@
-
 import os
 import shutil
 from datetime import datetime
 from core import config
 
+
+# ============================================================
+# Helpers
+# ============================================================
 
 def is_cosmetic_change(old: str, new: str) -> bool:
     if not old or not new:
@@ -26,111 +29,147 @@ def is_cosmetic_change(old: str, new: str) -> bool:
 
     return False
 
+
 def _backup_file(path):
     if not os.path.exists(path):
         return
+
     backup_dir = os.path.join(os.path.dirname(path), "_history")
     os.makedirs(backup_dir, exist_ok=True)
+
     timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     backup_path = os.path.join(
         backup_dir,
         f"{os.path.basename(path)}.{timestamp}.bak"
     )
+
     shutil.copy2(path, backup_path)
 
 
-def apply_update_plan(update_plan: dict):
+def _read_feature(path):
+    if not os.path.exists(path):
+        return []
+    with open(path, "r", encoding="utf-8") as f:
+        return f.readlines()
+
+
+def _write_feature(path, lines):
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+# ============================================================
+# Core Engine
+# ============================================================
+
+def apply_update_plan(update_plan: dict, simulate: bool = False):
 
     if "changes" not in update_plan:
         raise ValueError("Invalid UpdatePlan: missing changes")
 
     base = config.BASE_FEATURES_DIR
+    in_memory_files = {}
+
+    # Load all features in memory if simulate
+    if simulate:
+        for root, _, files in os.walk(base):
+            for file in files:
+                if file.endswith(".feature"):
+                    full_path = os.path.join(root, file)
+                    in_memory_files[full_path] = _read_feature(full_path)
 
     for change in update_plan.get("changes", []):
 
-        required = ["action", "screen", "feature"]
-        for field in required:
-            if field not in change:
-                raise ValueError(f"Invalid change object: missing {field}")
-
         screen = change["screen"]
         feature = change["feature"]
-        scenario = change.get("scenario")
         action = change["action"]
 
         screen_path = os.path.join(base, screen)
-        os.makedirs(screen_path, exist_ok=True)
-
         feature_path = os.path.join(screen_path, f"{feature}.feature")
 
-        # CREATE FEATURE
-        if action == "create_feature":
-            if not os.path.exists(feature_path):
-                with open(feature_path, "w", encoding="utf-8") as f:
-                    f.write(f"Feature: {feature}\n\n")
-
-        # CREATE SCENARIO
-        elif action == "create_scenario":
-            if not scenario:
-                raise ValueError("create_scenario requires scenario name")
-
-            if not os.path.exists(feature_path):
-                raise ValueError("Feature does not exist for scenario creation")
-
-            _backup_file(feature_path)
-
-            with open(feature_path, "a", encoding="utf-8") as f:
-                f.write(f"  Scenario: {scenario}\n")
-
-        # UPDATE STEP
-        elif action == "update_step":
-            if is_cosmetic_change(change.old_value, change.new_value):
+        if simulate:
+            lines = in_memory_files.get(feature_path, [])
+        else:
+            if not os.path.exists(feature_path) and action != "create_feature":
                 continue
-            if not os.path.exists(feature_path):
-                raise ValueError("Feature does not exist for update_step")
+            lines = _read_feature(feature_path)
+
+        # ====================================================
+        # CREATE FEATURE
+        # ====================================================
+        if action == "create_feature":
+            if simulate:
+                in_memory_files[feature_path] = [f"Feature: {feature}\n\n"]
+            else:
+                os.makedirs(screen_path, exist_ok=True)
+                _write_feature(feature_path, [f"Feature: {feature}\n\n"])
+            continue
+
+        # ====================================================
+        # UPDATE STEP (robusto)
+        # ====================================================
+        if action == "update_step":
 
             old_value = change.get("old_value")
             new_value = change.get("new_value")
+            step_index = change.get("step_index")
 
-            if not old_value or not new_value:
-                raise ValueError("update_step requires old_value and new_value")
-
-            with open(feature_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-
-            found = False
-
-            for i, line in enumerate(lines):
-                if old_value.strip() in line.strip():
-                    lines[i] = new_value.rstrip() + "\n"
-                    found = True
-                    break
-
-            if not found:
-                raise ValueError("Old value not found in file")
-
-            _backup_file(feature_path)
-
-            with open(feature_path, "w", encoding="utf-8") as f:
-                f.writelines(lines)
-
-            with open(feature_path, "w", encoding="utf-8") as f:
-                f.writelines(lines)
-
-        # DELETE SCENARIO (basic implementation)
-        elif action == "delete_scenario":
-            if not os.path.exists(feature_path):
+            if not new_value:
                 continue
 
-            _backup_file(feature_path)
+            if old_value and is_cosmetic_change(old_value, new_value):
+                continue
 
-            with open(feature_path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
+            updated = False
+
+            # 1️⃣ Try by text match first (robust)
+            if old_value:
+                for i, line in enumerate(lines):
+                    if old_value.strip() in line.strip():
+                        lines[i] = new_value.rstrip() + "\n"
+                        updated = True
+                        break
+
+            # 2️⃣ Fallback to index
+            if not updated and step_index is not None:
+                if 0 <= step_index < len(lines):
+                    lines[step_index] = new_value.rstrip() + "\n"
+                    updated = True
+
+            if not updated:
+                continue
+
+        # ====================================================
+        # CREATE SCENARIO
+        # ====================================================
+        elif action == "create_scenario":
+
+            scenario_name = change.get("scenario")
+            scenario_body = change.get("new_value")
+
+            if not scenario_name:
+                continue
+
+            lines.append(f"\n  Scenario: {scenario_name}\n")
+
+            if scenario_body:
+                for step in scenario_body.split(","):
+                    lines.append(f"    {step.strip()}\n")
+
+        # ====================================================
+        # DELETE SCENARIO
+        # ====================================================
+        elif action == "delete_scenario":
+
+            scenario_name = change.get("scenario")
+            if not scenario_name:
+                continue
 
             new_lines = []
             skip = False
+
             for line in lines:
-                if line.strip().startswith("Scenario:") and scenario in line:
+                if line.strip().startswith("Scenario:") and scenario_name in line:
                     skip = True
                     continue
                 if skip and line.strip().startswith("Scenario:"):
@@ -138,59 +177,39 @@ def apply_update_plan(update_plan: dict):
                 if not skip:
                     new_lines.append(line)
 
-            with open(feature_path, "w", encoding="utf-8") as f:
-                f.writelines(new_lines)
+            lines = new_lines
 
+        # ====================================================
         # DELETE FEATURE
+        # ====================================================
         elif action == "delete_feature":
+
+            if simulate:
+                in_memory_files.pop(feature_path, None)
+                continue
+
             if os.path.exists(feature_path):
                 _backup_file(feature_path)
                 os.remove(feature_path)
+                continue
 
+        # ====================================================
+        # SAVE
+        # ====================================================
+        if simulate:
+            in_memory_files[feature_path] = lines
         else:
-            raise ValueError(f"Unsupported action: {action}")
+            _backup_file(feature_path)
+            _write_feature(feature_path, lines)
 
-def simulate_update_plan(update_plan: dict) -> str:
-    """
-    Simula cambios en memoria y devuelve el nuevo contenido
-    sin escribir en disco.
-    """
+    # ========================================================
+    # RETURN SIMULATION RESULT
+    # ========================================================
+    if simulate:
+        combined_content = []
+        for path in sorted(in_memory_files.keys()):
+            combined_content.extend(in_memory_files[path])
+            combined_content.append("\n")
+        return "".join(combined_content)
 
-    base = config.BASE_FEATURES_DIR
-    simulated_content = read_all_features(base)
-
-    if "changes" not in update_plan:
-        return simulated_content
-
-    lines = simulated_content.splitlines()
-
-    for change in update_plan.get("changes", []):
-
-        if change["action"] != "update_step":
-            continue
-
-        old_value = change.get("old_value")
-        new_value = change.get("new_value")
-
-        if not old_value or not new_value:
-            continue
-
-        for i, line in enumerate(lines):
-            if old_value.strip() in line.strip():
-                lines[i] = new_value.rstrip()
-                break
-
-    return "\n".join(lines)
-
-
-def read_all_features(base_dir: str) -> str:
-    content = []
-
-    for root, _, files in os.walk(base_dir):
-        for file in files:
-            if file.endswith(".feature"):
-                path = os.path.join(root, file)
-                with open(path, "r", encoding="utf-8") as f:
-                    content.append(f.read())
-
-    return "\n".join(content)
+    return True

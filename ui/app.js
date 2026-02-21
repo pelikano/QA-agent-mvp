@@ -5,11 +5,10 @@
 let proposedData = null;
 let currentStructure = {};
 let proposedDiff = [];
-let proposedDiffMap = {}; // file -> diff lines
 
 
 // ==========================================
-// SYSTEM STATUS
+// LOAD SYSTEM STATUS
 // ==========================================
 
 async function loadSystemStatus() {
@@ -58,7 +57,7 @@ async function loadCurrentFeatures() {
             fileItem.innerText = file;
 
             fileItem.onclick = () => {
-                renderFile(screen, file);
+                renderRawFile(screen, file);
             };
 
             container.appendChild(fileItem);
@@ -98,8 +97,6 @@ async function generate() {
         proposedData = data.result;
         proposedDiff = data.diff || [];
 
-        buildDiffMap();
-
         renderProposed(proposedData);
         updateActionButtons();
 
@@ -133,10 +130,8 @@ async function applyChanges() {
 
         proposedData = null;
         proposedDiff = [];
-        proposedDiffMap = {};
 
         updateActionButtons();
-
         await loadCurrentFeatures();
 
         document.getElementById("proposedFiles").innerHTML = "";
@@ -167,11 +162,7 @@ function renderProposed(data) {
     data.changes.forEach(change => {
 
         const block = document.createElement("div");
-        block.style.padding = "10px";
-        block.style.marginBottom = "8px";
-        block.style.background = "#f8f9fa";
-        block.style.border = "1px solid #ddd";
-        block.style.borderRadius = "6px";
+        block.className = "file-item";
 
         block.innerHTML = `
             <div><strong>${change.action}</strong></div>
@@ -179,83 +170,51 @@ function renderProposed(data) {
             <div>${change.scenario || ""}</div>
         `;
 
+        block.onclick = () => {
+            renderDiff();
+        };
+
         container.appendChild(block);
     });
 }
 
 
 // ==========================================
-// DIFF PER FILE
+// RENDER RAW FILE
 // ==========================================
 
-function buildDiffMap() {
-
-    proposedDiffMap = {};
-
-    if (!proposedDiff || proposedDiff.length === 0)
-        return;
-
-    let currentFile = null;
-
-    proposedDiff.forEach(line => {
-
-        if (line.startsWith("+++ ")) {
-            currentFile = line.replace("+++ ", "").trim();
-            proposedDiffMap[currentFile] = [];
-            return;
-        }
-
-        if (!currentFile) return;
-
-        proposedDiffMap[currentFile].push(line);
-    });
-}
-
-
-function renderFile(screen, file) {
+function renderRawFile(screen, file) {
 
     const viewer = document.getElementById("diffViewer");
     viewer.innerHTML = "";
 
     const rawContent = currentStructure[screen][file];
 
-    const fullPath = `${screen}/${file}`;
+    viewer.innerHTML = rawContent
+        .split("\n")
+        .map(line =>
+            `<div class="diff-line diff-unchanged">${escapeHtml(line)}</div>`
+        ).join("");
+}
 
-    // If no proposed changes → show normal
-    if (!proposedData || !proposedData.changes || proposedData.changes.length === 0) {
 
-        viewer.innerHTML = rawContent
-            .split("\n")
-            .map(line =>
-                `<div class="diff-line diff-unchanged">${escapeHtml(line)}</div>`
-            ).join("");
+// ==========================================
+// RENDER GLOBAL DIFF
+// ==========================================
 
-        return;
-    }
+function renderDiff() {
 
-    // If file has no diff → show normal
-    if (!proposedDiffMap[fullPath]) {
+    const viewer = document.getElementById("diffViewer");
+    viewer.innerHTML = "";
 
-        viewer.innerHTML = rawContent
-            .split("\n")
-            .map(line =>
-                `<div class="diff-line diff-unchanged">${escapeHtml(line)}</div>`
-            ).join("");
-
-        return;
-    }
-
-    // Show Git style diff
-    proposedDiffMap[fullPath].forEach(line => {
+    proposedDiff.forEach(line => {
 
         let className = "diff-unchanged";
 
-        if (line.startsWith("+") && !line.startsWith("+++")) {
+        if (line.startsWith("+") && !line.startsWith("+++"))
             className = "diff-added";
-        }
-        else if (line.startsWith("-") && !line.startsWith("---")) {
+        else if (line.startsWith("-") && !line.startsWith("---"))
             className = "diff-removed";
-        }
 
         viewer.innerHTML +=
             `<div class="diff-line ${className}">${escapeHtml(line)}</div>`;
@@ -271,15 +230,12 @@ function updateActionButtons() {
 
     const applyBtn = document.getElementById("applyButton");
 
-    if (!applyBtn) return;   // 🔥 PROTECCIÓN CLAVE
+    if (!applyBtn) return;
 
     if (proposedData && proposedData.changes && proposedData.changes.length > 0) {
-
         applyBtn.disabled = false;
         applyBtn.className = "button-success";
-
     } else {
-
         applyBtn.disabled = true;
         applyBtn.className = "button-disabled";
     }
@@ -314,7 +270,6 @@ document.addEventListener("DOMContentLoaded", async () => {
 
     proposedData = null;
     proposedDiff = [];
-    proposedDiffMap = {};
 
     updateActionButtons();
     hideLoader();
