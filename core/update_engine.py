@@ -8,28 +8,6 @@ from core import config
 # Helpers
 # ============================================================
 
-def is_cosmetic_change(old: str, new: str) -> bool:
-    if not old or not new:
-        return False
-
-    normalized_old = old.strip().lower().rstrip(".")
-    normalized_new = new.strip().lower().rstrip(".")
-
-    trivial_replacements = [
-        ("should", "must"),
-        ("must", "should")
-    ]
-
-    if normalized_old == normalized_new:
-        return True
-
-    for a, b in trivial_replacements:
-        if normalized_old.replace(a, b) == normalized_new:
-            return True
-
-    return False
-
-
 def _backup_file(path):
     if not os.path.exists(path):
         return
@@ -46,16 +24,17 @@ def _backup_file(path):
     shutil.copy2(path, backup_path)
 
 
-def _read_feature(path):
-    if not os.path.exists(path):
-        return []
-    with open(path, "r", encoding="utf-8") as f:
-        return f.readlines()
+def read_all_features_map(base_dir: str):
+    files = {}
 
+    for root, _, file_list in os.walk(base_dir):
+        for file in file_list:
+            if file.endswith(".feature"):
+                path = os.path.join(root, file)
+                with open(path, "r", encoding="utf-8") as f:
+                    files[path] = f.read()
 
-def _write_feature(path, lines):
-    with open(path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
+    return files
 
 
 # ============================================================
@@ -64,152 +43,128 @@ def _write_feature(path, lines):
 
 def apply_update_plan(update_plan: dict, simulate: bool = False):
 
+    print("\n==============================")
+    print("ENTER apply_update_plan")
+    print("==============================")
+
     if "changes" not in update_plan:
         raise ValueError("Invalid UpdatePlan: missing changes")
 
     base = config.BASE_FEATURES_DIR
+
+    # -------------------------------------------------
+    # 1️⃣ Cargar archivos actuales
+    # -------------------------------------------------
     in_memory_files = {}
 
-    # Load all features in memory if simulate
-    if simulate:
-        for root, _, files in os.walk(base):
-            for file in files:
-                if file.endswith(".feature"):
-                    full_path = os.path.join(root, file)
-                    in_memory_files[full_path] = _read_feature(full_path)
+    for root, _, files in os.walk(base):
+        for file in files:
+            if file.endswith(".feature"):
+                full_path = os.path.abspath(os.path.join(root, file))
+                with open(full_path, "r", encoding="utf-8") as f:
+                    in_memory_files[full_path] = f.readlines()
 
+    print("Loaded feature files:")
+    for k in in_memory_files.keys():
+        print("   ", k)
+
+    # -------------------------------------------------
+    # 2️⃣ Buscar archivo REAL dentro de memoria
+    # -------------------------------------------------
+    def find_feature_file(screen: str, feature_name: str):
+
+        print("\n--- find_feature_file ---")
+        print("Looking for screen:", screen)
+        print("Looking for feature:", feature_name)
+
+        for path, lines in in_memory_files.items():
+
+            # screen match por carpeta
+            if screen.lower() not in path.lower():
+                continue
+
+            # leer primera línea
+            first_line = lines[0].strip() if lines else ""
+
+            if first_line.lower() == f"feature: {feature_name}".lower():
+                print("MATCH FOUND:", path)
+                return path
+
+        print("No match found.")
+        return None
+
+    # -------------------------------------------------
+    # 3️⃣ Aplicar cambios
+    # -------------------------------------------------
     for change in update_plan.get("changes", []):
+
+        print("\nProcessing change:", change)
 
         screen = change["screen"]
         feature = change["feature"]
         action = change["action"]
 
-        screen_path = os.path.join(base, screen)
-        feature_path = os.path.join(screen_path, f"{feature}.feature")
+        feature_path = find_feature_file(screen, feature)
 
-        if simulate:
-            lines = in_memory_files.get(feature_path, [])
-        else:
-            if not os.path.exists(feature_path) and action != "create_feature":
-                continue
-            lines = _read_feature(feature_path)
-
-        # ====================================================
-        # CREATE FEATURE
-        # ====================================================
-        if action == "create_feature":
-            if simulate:
-                in_memory_files[feature_path] = [f"Feature: {feature}\n\n"]
-            else:
-                os.makedirs(screen_path, exist_ok=True)
-                _write_feature(feature_path, [f"Feature: {feature}\n\n"])
+        if not feature_path:
+            print("❌ Feature file NOT FOUND")
             continue
 
-        # ====================================================
-        # UPDATE STEP (robusto)
-        # ====================================================
+        lines = in_memory_files.get(feature_path)
+
+        if not lines:
+            print("❌ File has no lines loaded")
+            continue
+
+        # -----------------------------
+        # UPDATE STEP
+        # -----------------------------
         if action == "update_step":
 
             old_value = change.get("old_value")
             new_value = change.get("new_value")
-            step_index = change.get("step_index")
 
-            if not new_value:
-                continue
+            print("Old value:", old_value)
+            print("New value:", new_value)
 
-            if old_value and is_cosmetic_change(old_value, new_value):
-                continue
+            replaced = False
 
-            updated = False
+            for i, line in enumerate(lines):
+                if old_value.strip() in line.strip():
+                    print("MATCH LINE FOUND:")
+                    print("   BEFORE:", line.strip())
 
-            # 1️⃣ Try by text match first (robust)
-            if old_value:
-                for i, line in enumerate(lines):
-                    if old_value.strip() in line.strip():
-                        lines[i] = new_value.rstrip() + "\n"
-                        updated = True
-                        break
+                    lines[i] = line.replace(
+                        old_value.strip(),
+                        new_value.strip()
+                    )
 
-            # 2️⃣ Fallback to index
-            if not updated and step_index is not None:
-                if 0 <= step_index < len(lines):
-                    lines[step_index] = new_value.rstrip() + "\n"
-                    updated = True
+                    print("   AFTER :", lines[i].strip())
+                    replaced = True
+                    break
 
-            if not updated:
-                continue
+            if not replaced:
+                print("⚠️ old_value NOT found inside file.")
 
-        # ====================================================
-        # CREATE SCENARIO
-        # ====================================================
-        elif action == "create_scenario":
+        in_memory_files[feature_path] = lines
 
-            scenario_name = change.get("scenario")
-            scenario_body = change.get("new_value")
-
-            if not scenario_name:
-                continue
-
-            lines.append(f"\n  Scenario: {scenario_name}\n")
-
-            if scenario_body:
-                for step in scenario_body.split(","):
-                    lines.append(f"    {step.strip()}\n")
-
-        # ====================================================
-        # DELETE SCENARIO
-        # ====================================================
-        elif action == "delete_scenario":
-
-            scenario_name = change.get("scenario")
-            if not scenario_name:
-                continue
-
-            new_lines = []
-            skip = False
-
-            for line in lines:
-                if line.strip().startswith("Scenario:") and scenario_name in line:
-                    skip = True
-                    continue
-                if skip and line.strip().startswith("Scenario:"):
-                    skip = False
-                if not skip:
-                    new_lines.append(line)
-
-            lines = new_lines
-
-        # ====================================================
-        # DELETE FEATURE
-        # ====================================================
-        elif action == "delete_feature":
-
-            if simulate:
-                in_memory_files.pop(feature_path, None)
-                continue
-
-            if os.path.exists(feature_path):
-                _backup_file(feature_path)
-                os.remove(feature_path)
-                continue
-
-        # ====================================================
-        # SAVE
-        # ====================================================
-        if simulate:
-            in_memory_files[feature_path] = lines
-        else:
-            _backup_file(feature_path)
-            _write_feature(feature_path, lines)
-
-    # ========================================================
-    # RETURN SIMULATION RESULT
-    # ========================================================
+    # -------------------------------------------------
+    # 4️⃣ SIMULATION
+    # -------------------------------------------------
     if simulate:
-        combined_content = []
-        for path in sorted(in_memory_files.keys()):
-            combined_content.extend(in_memory_files[path])
-            combined_content.append("\n")
-        return "".join(combined_content)
+        print("\nReturning simulated files.")
+        return {
+            path: "".join(lines)
+            for path, lines in in_memory_files.items()
+        }
+
+    # -------------------------------------------------
+    # 5️⃣ APPLY REAL
+    # -------------------------------------------------
+    print("\nApplying changes to disk.")
+    for path, lines in in_memory_files.items():
+        _backup_file(path)
+        with open(path, "w", encoding="utf-8") as f:
+            f.writelines(lines)
 
     return True

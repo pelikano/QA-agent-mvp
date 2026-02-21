@@ -4,7 +4,7 @@
 
 let proposedData = null;
 let currentStructure = {};
-let proposedDiff = [];
+let proposedDiffMap = {};   // 🔥 ahora es MAPA
 
 
 // ==========================================
@@ -95,9 +95,9 @@ async function generate() {
         const data = await response.json();
 
         proposedData = data.result;
-        proposedDiff = data.diff || [];
+        proposedDiffMap = data.diff || {};   // 🔥 ahora mapa
 
-        renderProposed(proposedData);
+        renderProposed();
         updateActionButtons();
 
     } catch (error) {
@@ -115,7 +115,7 @@ async function generate() {
 
 async function applyChanges() {
 
-    if (!proposedData || !proposedData.changes || proposedData.changes.length === 0)
+    if (!proposedData || !proposedData.changes?.length)
         return;
 
     showLoader();
@@ -129,7 +129,7 @@ async function applyChanges() {
         });
 
         proposedData = null;
-        proposedDiff = [];
+        proposedDiffMap = {};
 
         updateActionButtons();
         await loadCurrentFeatures();
@@ -146,35 +146,56 @@ async function applyChanges() {
 
 
 // ==========================================
-// RENDER PROPOSED
+// RENDER PROPOSED FILE LIST
 // ==========================================
 
-function renderProposed(data) {
+function renderProposed() {
 
     const container = document.getElementById("proposedFiles");
     container.innerHTML = "";
 
-    if (!data || !data.changes || data.changes.length === 0) {
+    if (!proposedDiffMap || Object.keys(proposedDiffMap).length === 0) {
         container.innerHTML = "<p>No changes proposed.</p>";
         return;
     }
 
-    data.changes.forEach(change => {
+    Object.keys(proposedDiffMap).forEach(fileKey => {
 
         const block = document.createElement("div");
         block.className = "file-item";
-
-        block.innerHTML = `
-            <div><strong>${change.action}</strong></div>
-            <div>${change.screen} → ${change.feature}</div>
-            <div>${change.scenario || ""}</div>
-        `;
+        block.innerHTML = `<strong>${fileKey}</strong>`;
 
         block.onclick = () => {
-            renderDiff();
+            renderFileDiff(fileKey);
         };
 
         container.appendChild(block);
+    });
+}
+
+
+// ==========================================
+// RENDER FILE DIFF (REAL GIT STYLE)
+// ==========================================
+
+function renderFileDiff(fileKey) {
+
+    const viewer = document.getElementById("diffViewer");
+    viewer.innerHTML = "";
+
+    const diffLines = proposedDiffMap[fileKey];
+
+    diffLines.forEach(line => {
+
+        let className = "diff-unchanged";
+
+        if (line.startsWith("+") && !line.startsWith("+++"))
+            className = "diff-added";
+        else if (line.startsWith("-") && !line.startsWith("---"))
+            className = "diff-removed";
+
+        viewer.innerHTML +=
+            `<div class="diff-line ${className}">${escapeHtml(line)}</div>`;
     });
 }
 
@@ -199,30 +220,6 @@ function renderRawFile(screen, file) {
 
 
 // ==========================================
-// RENDER GLOBAL DIFF
-// ==========================================
-
-function renderDiff() {
-
-    const viewer = document.getElementById("diffViewer");
-    viewer.innerHTML = "";
-
-    proposedDiff.forEach(line => {
-
-        let className = "diff-unchanged";
-
-        if (line.startsWith("+") && !line.startsWith("+++"))
-            className = "diff-added";
-        else if (line.startsWith("-") && !line.startsWith("---"))
-            className = "diff-removed";
-
-        viewer.innerHTML +=
-            `<div class="diff-line ${className}">${escapeHtml(line)}</div>`;
-    });
-}
-
-
-// ==========================================
 // BUTTON STATE
 // ==========================================
 
@@ -232,7 +229,7 @@ function updateActionButtons() {
 
     if (!applyBtn) return;
 
-    if (proposedData && proposedData.changes && proposedData.changes.length > 0) {
+    if (proposedData && proposedData.changes?.length > 0) {
         applyBtn.disabled = false;
         applyBtn.className = "button-success";
     } else {
@@ -269,7 +266,7 @@ function hideLoader() {
 document.addEventListener("DOMContentLoaded", async () => {
 
     proposedData = null;
-    proposedDiff = [];
+    proposedDiffMap = {};
 
     updateActionButtons();
     hideLoader();

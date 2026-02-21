@@ -9,7 +9,7 @@ import difflib
 
 from core.agent import run_agent
 from core.feature_structure import build_feature_structure
-from core.update_engine import apply_update_plan
+from core.update_engine import apply_update_plan, read_all_features_map
 from core.retry import retry_with_correction
 from core.llm import call_llm
 from core.sync_prompt_builder import build_sync_prompt
@@ -43,13 +43,18 @@ async def sync_tests(
 ):
     try:
 
+        # ======================================================
+        # 1️⃣ Validación input
+        # ======================================================
         if not file and not text_input:
             return JSONResponse(
                 status_code=400,
                 content={"error": "Provide file or text_input."}
             )
 
-        # 1️⃣ Extract new document
+        # ======================================================
+        # 2️⃣ Extraer documento nuevo
+        # ======================================================
         if file:
             ext = os.path.splitext(file.filename)[1].lower()
             with tempfile.NamedTemporaryFile(delete=False, suffix=ext) as tmp:
@@ -60,43 +65,83 @@ async def sync_tests(
         else:
             new_document = text_input
 
-        # 2️⃣ Read full suite
-        current_tests = read_existing_tests() or ""
+        # ======================================================
+        # 3️⃣ Leer suite actual (MAPA DE ARCHIVOS)
+        # ======================================================
+        current_files_raw = read_all_features_map(config.BASE_FEATURES_DIR)
 
-        # 3️⃣ Build structure
-        existing_structure = build_feature_structure(config.BASE_FEATURES_DIR)
+        current_files = {
+            os.path.abspath(path): content
+            for path, content in current_files_raw.items()
+        }
 
-        # 4️⃣ Prompt
+        # ======================================================
+        # 4️⃣ Construir prompt
+        # ======================================================
         prompt = build_sync_prompt(
-            current_tests=current_tests,
-            existing_structure=existing_structure,
+            current_tests="\n".join(current_files.values()),
+            existing_structure=build_feature_structure(config.BASE_FEATURES_DIR),
             new_document=new_document
         )
 
-        # 5️⃣ LLM
+        # ======================================================
+        # 5️⃣ LLM → UpdatePlan
+        # ======================================================
         update_plan = retry_with_correction(
             call_fn=call_llm,
             prompt=prompt,
             schema_cls=UpdatePlan
         )
 
-        # 6️⃣ Simulate
-        simulated_new_content = apply_update_plan(
+        # ======================================================
+        # 6️⃣ Simulación REAL
+        # ======================================================
+        simulated_files_raw = apply_update_plan(
             update_plan,
             simulate=True
         )
 
-        # 7️⃣ Diff global (simple y fiable)
-        diff = list(difflib.unified_diff(
-            current_tests.splitlines(),
-            simulated_new_content.splitlines(),
-            lineterm=""
-        ))
+        simulated_files = {
+            os.path.abspath(path): content
+            for path, content in simulated_files_raw.items()
+        }
+
+        # ======================================================
+        # 7️⃣ Generar diff por archivo
+        # ======================================================
+        diff_by_file = {}
+
+        for path, new_content in simulated_files.items():
+
+            old_content = current_files.get(path)
+
+            if old_content is None:
+                # Archivo nuevo
+                diff = list(difflib.unified_diff(
+                    [],
+                    new_content.splitlines(),
+                    lineterm=""
+                ))
+            else:
+                diff = list(difflib.unified_diff(
+                    old_content.splitlines(),
+                    new_content.splitlines(),
+                    lineterm=""
+                ))
+
+            if diff:
+                file_key = os.path.relpath(path, config.BASE_FEATURES_DIR)
+                diff_by_file[file_key] = diff
+
+        # ======================================================
+        # DEBUG
+        # ======================================================
+        print("==== DIFF BY FILE ====")
+        print(diff_by_file)
 
         return {
-            "mode": "sync",
             "result": update_plan,
-            "diff": diff
+            "diff": diff_by_file
         }
 
     except Exception as e:
