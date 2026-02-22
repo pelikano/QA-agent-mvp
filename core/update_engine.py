@@ -51,50 +51,33 @@ def apply_update_plan(update_plan: dict, simulate: bool = False):
         raise ValueError("Invalid UpdatePlan: missing changes")
 
     base = config.BASE_FEATURES_DIR
-
-    # -------------------------------------------------
-    # 1️⃣ Cargar archivos actuales
-    # -------------------------------------------------
     in_memory_files = {}
 
-    for root, _, files in os.walk(base):
-        for file in files:
-            if file.endswith(".feature"):
-                full_path = os.path.abspath(os.path.join(root, file))
-                with open(full_path, "r", encoding="utf-8") as f:
-                    in_memory_files[full_path] = f.readlines()
+    # -------------------------------------------------
+    # 1️⃣ Load existing feature files
+    # -------------------------------------------------
+    if os.path.exists(base):
+        for root, _, files in os.walk(base):
+            for file in files:
+                if file.endswith(".feature"):
+                    full_path = os.path.abspath(os.path.join(root, file))
+                    with open(full_path, "r", encoding="utf-8") as f:
+                        in_memory_files[full_path] = f.readlines()
 
-    print("Loaded feature files:")
+    print("Loaded files:")
     for k in in_memory_files.keys():
-        print("   ", k)
+        print("  ", k)
 
     # -------------------------------------------------
-    # 2️⃣ Buscar archivo REAL dentro de memoria
+    # 2️⃣ Helper to build feature path
     # -------------------------------------------------
-    def find_feature_file(screen: str, feature_name: str):
-
-        print("\n--- find_feature_file ---")
-        print("Looking for screen:", screen)
-        print("Looking for feature:", feature_name)
-
-        for path, lines in in_memory_files.items():
-
-            # screen match por carpeta
-            if screen.lower() not in path.lower():
-                continue
-
-            # leer primera línea
-            first_line = lines[0].strip() if lines else ""
-
-            if first_line.lower() == f"feature: {feature_name}".lower():
-                print("MATCH FOUND:", path)
-                return path
-
-        print("No match found.")
-        return None
+    def build_feature_path(screen, feature):
+        screen_dir = os.path.join(base, screen)
+        filename = f"{feature.lower().replace(' ', '_')}.feature"
+        return os.path.abspath(os.path.join(screen_dir, filename))
 
     # -------------------------------------------------
-    # 3️⃣ Aplicar cambios
+    # 3️⃣ Apply changes
     # -------------------------------------------------
     for change in update_plan.get("changes", []):
 
@@ -104,55 +87,137 @@ def apply_update_plan(update_plan: dict, simulate: bool = False):
         feature = change["feature"]
         action = change["action"]
 
-        feature_path = find_feature_file(screen, feature)
+        feature_path = build_feature_path(screen, feature)
 
-        if not feature_path:
-            print("❌ Feature file NOT FOUND")
+        # =====================================================
+        # CREATE FEATURE (NO PRIOR VALIDATION)
+        # =====================================================
+        if action == "create_feature":
+
+            if feature_path not in in_memory_files:
+                print("Creating feature:", feature_path)
+
+                os.makedirs(os.path.dirname(feature_path), exist_ok=True)
+
+                lines = [
+                    f"Feature: {feature}\n",
+                    "\n"
+                ]
+
+                scenario = change.get("scenario")
+                new_value = change.get("new_value")
+
+                if scenario and new_value:
+                    print("Adding initial scenario:", scenario)
+
+                    lines.append(f"  Scenario: {scenario}\n")
+
+                    for step in new_value.split("\n"):
+                        step = step.strip()
+                        if step:
+                            lines.append(f"    {step}\n")
+
+                    lines.append("\n")
+
+                in_memory_files[feature_path] = lines
+
+            continue  # 🔥 critical
+
+        # =====================================================
+        # VALIDATE FILE EXISTS FOR OTHER ACTIONS
+        # =====================================================
+        if feature_path not in in_memory_files:
+            print("⚠️ Feature file not found:", feature_path)
             continue
 
-        lines = in_memory_files.get(feature_path)
+        lines = in_memory_files[feature_path]
 
-        if not lines:
-            print("❌ File has no lines loaded")
-            continue
+        # =====================================================
+        # CREATE SCENARIO
+        # =====================================================
+        if action == "create_scenario":
 
-        # -----------------------------
+            scenario = change.get("scenario")
+            new_value = change.get("new_value")
+
+            if scenario and new_value:
+
+                print("Adding scenario:", scenario)
+
+                lines.append(f"  Scenario: {scenario}\n")
+
+                for step in new_value.split("\n"):
+                    step = step.strip()
+                    if not step:
+                        continue
+
+                    if step.startswith(("Given", "When", "Then", "And", "But")):
+                        lines.append(f"    {step}\n")
+
+                lines.append("\n")
+
+        # =====================================================
         # UPDATE STEP
-        # -----------------------------
-        if action == "update_step":
+        # =====================================================
+        elif action == "update_step":
 
+            scenario_name = change.get("scenario")
+            step_index = change.get("step_index")
             old_value = change.get("old_value")
             new_value = change.get("new_value")
 
-            print("Old value:", old_value)
-            print("New value:", new_value)
+            print("Updating scenario:", scenario_name)
 
-            replaced = False
-
-            for i, line in enumerate(lines):
-                if old_value.strip() in line.strip():
-                    print("MATCH LINE FOUND:")
-                    print("   BEFORE:", line.strip())
-
-                    lines[i] = line.replace(
-                        old_value.strip(),
-                        new_value.strip()
-                    )
-
-                    print("   AFTER :", lines[i].strip())
-                    replaced = True
+            # Find scenario start
+            scenario_start = None
+            for idx, line in enumerate(lines):
+                if line.strip().startswith("Scenario:") and scenario_name in line:
+                    scenario_start = idx
                     break
 
-            if not replaced:
-                print("⚠️ old_value NOT found inside file.")
+            if scenario_start is None:
+                print("⚠️ Scenario not found:", scenario_name)
+                continue
 
-        in_memory_files[feature_path] = lines
+            # Collect scenario steps
+            scenario_indices = []
+            for i in range(scenario_start + 1, len(lines)):
+                if lines[i].strip().startswith("Scenario:"):
+                    break
+                if lines[i].strip().startswith(("Given", "When", "Then", "And", "But")):
+                    scenario_indices.append(i)
+
+            print("Scenario indices:", scenario_indices)
+            print("Requested step_index:", step_index)
+
+            # Primary strategy: index
+            if step_index is not None and step_index < len(scenario_indices):
+                target_line_index = scenario_indices[step_index]
+                print("BEFORE:", lines[target_line_index].strip())
+                lines[target_line_index] = "    " + new_value + "\n"
+                print("AFTER :", lines[target_line_index].strip())
+
+            # Fallback strategy: match old_value
+            else:
+                print("⚠️ step_index invalid, fallback to old_value match")
+
+                replaced = False
+                for i in scenario_indices:
+                    if old_value and old_value.strip() in lines[i]:
+                        print("BEFORE:", lines[i].strip())
+                        lines[i] = lines[i].replace(old_value.strip(), new_value.strip())
+                        print("AFTER :", lines[i].strip())
+                        replaced = True
+                        break
+
+                if not replaced:
+                    print("⚠️ Could not update step via fallback")
 
     # -------------------------------------------------
-    # 4️⃣ SIMULATION
+    # 4️⃣ SIMULATION MODE
     # -------------------------------------------------
     if simulate:
-        print("\nReturning simulated files.")
+        print("Returning simulated files")
         return {
             path: "".join(lines)
             for path, lines in in_memory_files.items()
@@ -161,8 +226,10 @@ def apply_update_plan(update_plan: dict, simulate: bool = False):
     # -------------------------------------------------
     # 5️⃣ APPLY REAL
     # -------------------------------------------------
-    print("\nApplying changes to disk.")
+    print("Writing to disk")
+
     for path, lines in in_memory_files.items():
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         _backup_file(path)
         with open(path, "w", encoding="utf-8") as f:
             f.writelines(lines)

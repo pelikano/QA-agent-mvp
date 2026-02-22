@@ -6,17 +6,19 @@ from openai import OpenAI
 import tempfile
 import os
 import difflib
+import json
 
 from core.agent import run_agent
 from core.feature_structure import build_feature_structure
 from core.update_engine import apply_update_plan, read_all_features_map
-from core.retry import retry_with_correction
+from core.initial_generation_engine import apply_initial_generation
 from core.llm import call_llm
 from core.sync_prompt_builder import build_sync_prompt
 from core.test_reader import read_existing_tests
 from core.schemas_tests import UpdatePlan
+from core.schemas_initial import InitialGeneration
 from core.document_reader import extract_document
-from core import config  # ✅ CENTRAL CONFIG
+from core import config
 
 
 app = FastAPI()
@@ -32,7 +34,7 @@ def analyze_story(story: dict):
 
 
 # =========================================================
-# SYNC TESTS (ALWAYS DRY RUN FROM UI)
+# SYNC TESTS (AUTO-DETECT MODE)
 # =========================================================
 
 @app.post("/sync-tests")
@@ -44,7 +46,7 @@ async def sync_tests(
     try:
 
         # ======================================================
-        # 1️⃣ Validación input
+        # 1️⃣ Validate input
         # ======================================================
         if not file and not text_input:
             return JSONResponse(
@@ -53,7 +55,7 @@ async def sync_tests(
             )
 
         # ======================================================
-        # 2️⃣ Extraer documento nuevo
+        # 2️⃣ Extract new document
         # ======================================================
         if file:
             ext = os.path.splitext(file.filename)[1].lower()
@@ -66,7 +68,7 @@ async def sync_tests(
             new_document = text_input
 
         # ======================================================
-        # 3️⃣ Leer suite actual (MAPA DE ARCHIVOS)
+        # 3️⃣ Read current suite
         # ======================================================
         current_files_raw = read_all_features_map(config.BASE_FEATURES_DIR)
 
@@ -75,31 +77,97 @@ async def sync_tests(
             for path, content in current_files_raw.items()
         }
 
+        existing_structure = build_feature_structure(config.BASE_FEATURES_DIR)
+
         # ======================================================
-        # 4️⃣ Construir prompt
+        # 4️⃣ Build prompt
         # ======================================================
         prompt = build_sync_prompt(
             current_tests="\n".join(current_files.values()),
-            existing_structure=build_feature_structure(config.BASE_FEATURES_DIR),
+            existing_structure=existing_structure,
             new_document=new_document
         )
 
         # ======================================================
-        # 5️⃣ LLM → UpdatePlan
+        # 5️⃣ Call LLM (RAW)
         # ======================================================
-        update_plan = retry_with_correction(
-            call_fn=call_llm,
-            prompt=prompt,
-            schema_cls=UpdatePlan
-        )
+        raw_response = call_llm(prompt)
+
+        print("LLM RAW RESPONSE:", raw_response)
+
+        # --------------------------------------------------
+        # NORMALIZE RESPONSE TYPE
+        # --------------------------------------------------
+
+        if isinstance(raw_response, dict):
+            parsed = raw_response
+
+        elif isinstance(raw_response, str):
+
+            cleaned = raw_response.strip()
+
+            # Remove code fences
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("```")[1]
+
+            # Extract JSON safely
+            first = cleaned.find("{")
+            last = cleaned.rfind("}")
+
+            if first == -1 or last == -1:
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "No JSON found in LLM response"}
+                )
+
+            cleaned = cleaned[first:last+1]
+
+            try:
+                parsed = json.loads(cleaned)
+            except Exception as e:
+                print("JSON PARSE ERROR:", str(e))
+                return JSONResponse(
+                    status_code=500,
+                    content={"error": "Malformed JSON from LLM"}
+                )
+
+        else:
+            return JSONResponse(
+                status_code=500,
+                content={"error": f"Unsupported LLM response type: {type(raw_response)}"}
+            )
 
         # ======================================================
-        # 6️⃣ Simulación REAL
+        # 6️⃣ Detect response type
         # ======================================================
-        simulated_files_raw = apply_update_plan(
-            update_plan,
-            simulate=True
-        )
+
+        if "features" in parsed:
+
+            validated = InitialGeneration(**parsed)
+
+            simulated_files_raw = apply_initial_generation(
+                validated.model_dump(),
+                simulate=True
+            )
+
+            result_payload = validated.model_dump()
+
+        elif "changes" in parsed:
+
+            validated = UpdatePlan(**parsed)
+
+            simulated_files_raw = apply_update_plan(
+                validated.model_dump(),
+                simulate=True
+            )
+
+            result_payload = validated.model_dump()
+
+        else:
+            return JSONResponse(
+                status_code=500,
+                content={"error": "Unknown response format from LLM"}
+            )
 
         simulated_files = {
             os.path.abspath(path): content
@@ -107,7 +175,7 @@ async def sync_tests(
         }
 
         # ======================================================
-        # 7️⃣ Generar diff por archivo
+        # 7️⃣ Build diff
         # ======================================================
         diff_by_file = {}
 
@@ -116,7 +184,6 @@ async def sync_tests(
             old_content = current_files.get(path)
 
             if old_content is None:
-                # Archivo nuevo
                 diff = list(difflib.unified_diff(
                     [],
                     new_content.splitlines(),
@@ -133,14 +200,11 @@ async def sync_tests(
                 file_key = os.path.relpath(path, config.BASE_FEATURES_DIR)
                 diff_by_file[file_key] = diff
 
-        # ======================================================
-        # DEBUG
-        # ======================================================
         print("==== DIFF BY FILE ====")
         print(diff_by_file)
 
         return {
-            "result": update_plan,
+            "result": result_payload,
             "diff": diff_by_file
         }
 
@@ -150,15 +214,29 @@ async def sync_tests(
             content={"error": str(e)}
         )
 
+
 # =========================================================
-# APPLY PROPOSED (NO IA CALL)
+# APPLY PROPOSED
 # =========================================================
 
 @app.post("/apply-proposed")
-async def apply_proposed(update_plan: dict):
+async def apply_proposed(payload: dict):
     try:
-        apply_update_plan(update_plan, simulate=False)
+
+        if "features" in payload:
+            apply_initial_generation(payload, simulate=False)
+
+        elif "changes" in payload:
+            apply_update_plan(payload, simulate=False)
+
+        else:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Invalid payload format"}
+            )
+
         return {"status": "ok"}
+
     except Exception as e:
         return JSONResponse(
             status_code=500,
@@ -173,7 +251,7 @@ async def apply_proposed(update_plan: dict):
 @app.get("/test-structure")
 def get_test_structure():
 
-    base = config.BASE_FEATURES_DIR  # ✅ CENTRALIZED
+    base = config.BASE_FEATURES_DIR
     structure = {}
 
     if not os.path.exists(base):
@@ -199,13 +277,11 @@ def get_test_structure():
 
 
 # =========================================================
-# SET FEATURES DIRECTORY (PERSISTENT)
+# SET FEATURES DIRECTORY
 # =========================================================
 
 @app.post("/set-features-directory")
 def set_features_directory(payload: dict = Body(...)):
-
-    from core import config
 
     directory = payload.get("directory")
 
@@ -221,10 +297,7 @@ def set_features_directory(payload: dict = Body(...)):
             content={"error": "Directory does not exist"}
         )
 
-    # Update runtime config
     config.BASE_FEATURES_DIR = directory
-
-    # Persist in environment for current process
     os.environ["QA_FEATURES_DIR"] = directory
 
     return {
@@ -268,6 +341,7 @@ def check_api_key():
         "configured": bool(os.environ.get("OPENAI_API_KEY"))
     }
 
+
 # =========================================================
 # SYSTEM STATUS
 # =========================================================
@@ -275,15 +349,14 @@ def check_api_key():
 @app.get("/system-status")
 def system_status():
 
-    from core import config
-
     return {
         "api_configured": bool(os.environ.get("OPENAI_API_KEY")),
         "features_directory": config.BASE_FEATURES_DIR
     }
 
+
 # =========================================================
-# SERVE UI (MUST BE LAST)
+# SERVE UI
 # =========================================================
 
 app.mount("/", StaticFiles(directory="ui", html=True), name="ui")
