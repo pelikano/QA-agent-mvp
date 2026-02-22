@@ -115,7 +115,18 @@ async function generate() {
 
 async function applyChanges() {
 
-    if (!proposedData || !proposedData.changes?.length)
+    if (!proposedData)
+        return;
+
+    const hasChanges =
+        Array.isArray(proposedData.changes) &&
+        proposedData.changes.length > 0;
+
+    const hasFeatures =
+        Array.isArray(proposedData.features) &&
+        proposedData.features.length > 0;
+
+    if (!hasChanges && !hasFeatures)
         return;
 
     showLoader();
@@ -139,6 +150,7 @@ async function applyChanges() {
 
     } catch (error) {
         alert("Error applying changes.");
+        console.error(error);
     }
 
     hideLoader();
@@ -226,10 +238,19 @@ function renderRawFile(screen, file) {
 function updateActionButtons() {
 
     const applyBtn = document.getElementById("applyButton");
-
     if (!applyBtn) return;
 
-    if (proposedData && proposedData.changes?.length > 0) {
+    const hasChanges =
+        proposedData &&
+        Array.isArray(proposedData.changes) &&
+        proposedData.changes.length > 0;
+
+    const hasFeatures =
+        proposedData &&
+        Array.isArray(proposedData.features) &&
+        proposedData.features.length > 0;
+
+    if (hasChanges || hasFeatures) {
         applyBtn.disabled = false;
         applyBtn.className = "button-success";
     } else {
