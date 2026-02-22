@@ -18,3 +18,13 @@ CONTEXTO DEL PROYECTO:
         "system": system_prompt,
         "story": story
     }
+
+def build_analyze_prompt(story: dict) -> dict:
+    system_prompt = open("tenants/default/system_prompt_analyze.txt").read()
+
+    return {
+        "system": system_prompt,
+        "data": {
+            "story": story
+        }
+    }

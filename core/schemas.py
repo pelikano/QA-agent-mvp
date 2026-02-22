@@ -7,4 +7,4 @@ class QAAnalysis(BaseModel):
     missing_definitions: List[str]
     acceptance_criteria_proposed: List[str]
     edge_cases: List[str]
-    automation_notes: List[str]
+    automation_notes: str

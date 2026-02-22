@@ -279,6 +279,60 @@ function hideLoader() {
     document.getElementById("loader").style.display = "none";
 }
 
+// ==========================================
+// ANALYZE USER STORY
+// ==========================================
+
+async function analyzeStory() {
+
+    const input = document.getElementById("analyzeInput");
+    const output = document.getElementById("analyzeOutput");
+
+    const story = input.value.trim();
+
+    if (!story) {
+        alert("Please enter a user story.");
+        return;
+    }
+
+    output.value = "Analyzing...";
+
+    try {
+
+        const response = await fetch("/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                title: "User Story",
+                description: story
+            })
+        });
+
+        const data = await response.json();
+
+        output.value =
+            `Summary:\n${data.summary}\n\n` +
+            `Risk Level:\n${data.risk_level}\n\n` +
+
+            `Missing Definitions:\n` +
+            data.missing_definitions.map(i => `- ${i}`).join("\n") +
+            `\n\n` +
+
+            `Proposed Acceptance Criteria:\n` +
+            data.acceptance_criteria_proposed.map(i => `- ${i}`).join("\n") +
+            `\n\n` +
+
+            `Edge Cases:\n` +
+            data.edge_cases.map(i => `- ${i}`).join("\n") +
+            `\n\n` +
+
+            `Automation Notes:\n${data.automation_notes}`;
+
+    } catch (error) {
+        output.value = "Error during analysis.";
+        console.error(error);
+    }
+}
 
 // ==========================================
 // INIT

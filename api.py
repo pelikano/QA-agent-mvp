@@ -8,7 +8,7 @@ import os
 import difflib
 import json
 
-from core.agent import run_agent
+from core.agent import run_agent, run_analyze_agent
 from core.feature_structure import build_feature_structure
 from core.update_engine import apply_update_plan, read_all_features_map
 from core.initial_generation_engine import apply_initial_generation
@@ -30,7 +30,7 @@ app = FastAPI()
 
 @app.post("/analyze")
 def analyze_story(story: dict):
-    return run_agent(story)
+    return run_analyze_agent(story)
 
 
 # =========================================================
